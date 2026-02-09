@@ -1,73 +1,102 @@
 const crypto = require('crypto');
 const Block = require('./block');
+const fs = require('fs');
+const path = require('path');
 
 class Blockchain {
+  chain = [];
+  validatorId = '';
+
   constructor(validatorId) {
     this.chain = [Block.genesis()];
     this.validatorId = validatorId || 'AUTHORITY_NODE';
+  
+    // 🔑 Load validator keys
+    this.validatorPrivateKey = fs.readFileSync(
+      path.join(__dirname, '../../keys/validator.key')
+    );
+  
+    this.validatorPublicKey = fs.readFileSync(
+      path.join(__dirname, '../../keys/validator.pub')
+    );
   }
 
-  getLatestBlock() {
-    return this.chain[this.chain.length - 1];
-  }
+  // ✅ Get the latest block
+  getLatestBlock = () => this.chain[this.chain.length - 1];
 
-  addBlock(data) {
-    const previousBlock = this.getLatestBlock();
-    const index = previousBlock.index + 1;
-    const timestamp = Date.now();
-    const tempBlock = new Block(
-      index,
-      previousBlock.hash,
-      timestamp,
-      data,
-      this.validatorId,
-      null
-    );
-    const signature = this.signBlockHash(tempBlock.hash);
-    const newBlock = new Block(
-      index,
-      previousBlock.hash,
-      timestamp,
-      data,
-      this.validatorId,
-      signature
-    );
+  // ✅ Add a new block
+addBlock(data) {
+  const previousBlock = this.getLatestBlock();
+  const index = previousBlock.index + 1;
+  const timestamp = Date.now();
 
-    if (this.isValidNewBlock(newBlock, previousBlock)) {
-      this.chain.push(newBlock);
-      return newBlock;
-    }
+  // create block WITHOUT signature first
+  let block = new Block(
+    index,
+    previousBlock.hash,
+    timestamp,
+    data,
+    this.validatorId,
+    ''
+  );
+
+  // sign the hash
+  block.signature = this.signBlockHash(block.hash);
+
+  // recalculate hash AFTER signature
+  block.hash = block.calculateHash();
+
+  if (!this.isValidNewBlock(block, previousBlock)) {
     throw new Error('Invalid block');
   }
 
-  signBlockHash(hash) {
-    // Simple HMAC-based PoA-style signature with a shared secret for prototype.
+  this.chain.push(block);
+  return block;
+}
+  // ✅ Sign a block hash with HMAC (PoA-style)
+  signBlockHash = (hash) => {
     const secret = process.env.AUTHORITY_SECRET || 'dev-secret';
     return crypto.createHmac('sha256', secret).update(hash).digest('hex');
-  }
-
+  };
   isValidNewBlock(newBlock, previousBlock) {
-    if (previousBlock.index + 1 !== newBlock.index) return false;
-    if (previousBlock.hash !== newBlock.previousHash) return false;
-    if (newBlock.calculateHash() !== newBlock.hash) return false;
-    const expectedSignature = this.signBlockHash(newBlock.hash);
-    if (expectedSignature !== newBlock.signature) return false;
-    return true;
+  if (previousBlock.index + 1 !== newBlock.index) {
+    return false;
   }
 
-  isChainValid() {
+  if (newBlock.previousHash !== previousBlock.hash) {
+    return false;
+  }
+
+  if (newBlock.calculateHash() !== newBlock.hash) {
+    return false;
+  }
+
+  return true;
+}
+
+  verifyBlockSignature(block) {
+    if (!block.signature) return false;
+  
+    return crypto.verify(
+      'SHA256',
+      Buffer.from(block.hash),
+      this.validatorPublicKey,   // make sure this exists
+      Buffer.from(block.signature, 'hex')
+    );
+  }
+  
+  // ✅ Check if the full chain is valid
+  isChainValid = () => {
     for (let i = 1; i < this.chain.length; i++) {
       const current = this.chain[i];
       const prev = this.chain[i - 1];
       if (!this.isValidNewBlock(current, prev)) return false;
     }
     return true;
-  }
+  };
 
-  queryByPredicate(predicateFn) {
-    return this.chain.filter((block) => predicateFn(block.data));
-  }
+  // ✅ Query chain by a predicate
+  queryByPredicate = (predicateFn) => this.chain.filter((block) => predicateFn(block.data));
 }
 
 module.exports = Blockchain;
-

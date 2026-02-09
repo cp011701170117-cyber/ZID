@@ -10,16 +10,21 @@ class Block {
     this.signature = signature; // signature over hash by validator
     this.hash = this.calculateHash();
   }
-
+  setHash() {
+    this.hash = this.calculateHash();
+  }
   calculateHash() {
     const blockString = `${this.index}${this.previousHash}${this.timestamp}${JSON.stringify(
       this.data
-    )}${this.validator}${this.signature || ''}`;
+    )}${this.validator}`;
     return crypto.createHash('sha256').update(blockString).digest('hex');
   }
+  
+  
+  
 
   static genesis() {
-    return new Block(
+    const block = new Block(
       0,
       '0',
       Date.now(),
@@ -27,6 +32,8 @@ class Block {
       'GENESIS_VALIDATOR',
       null
     );
+    block.setHash(); // hash after signature (null here)
+    return block;
   }
 }
 

@@ -10,13 +10,16 @@
   },
   "dependencies": {
     "axios": "^1.7.9",
+    "canonicalize": "^2.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "elliptic": "^6.5.7",
+    "ethers": "^6.16.0",
     "express": "^4.21.2",
-    "ethers": "^6.13.4",
     "ipfs-http-client": "^60.0.0",
+    "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
+    "node-fetch": "^2.7.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
@@ -25,4 +28,3 @@
     "supertest": "^7.1.1"
   }
 }
-

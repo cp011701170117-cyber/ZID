@@ -1,100 +1,85 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { generateDID, getKeyPairFromStorage, saveKeyPairToStorage } from '../utils/crypto'
+import { ethers } from 'ethers'
 
-const WalletContext = createContext()
+const WalletContext = createContext(null)
 
-export const useWallet = () => {
-  const context = useContext(WalletContext)
-  if (!context) {
-    throw new Error('useWallet must be used within WalletProvider')
-  }
-  return context
-}
-
-export const WalletProvider = ({ children }) => {
-  const [wallet, setWallet] = useState(null)
+export function WalletProvider({ children }) {
+  const [session, setSession] = useState(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   useEffect(() => {
-    // Check if wallet exists in localStorage
-    const storedWallet = localStorage.getItem('identity_wallet')
-    if (storedWallet) {
-      try {
-        const walletData = JSON.parse(storedWallet)
-        setWallet(walletData)
-        setIsAuthenticated(true)
-      } catch (e) {
-        console.error('Failed to load wallet:', e)
-      }
+    const stored = localStorage.getItem('session')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      setSession(parsed)
+      setIsAuthenticated(true)
     }
   }, [])
 
-  const createWallet = async (username) => {
-    try {
-      const { did, keyPair } = await generateDID()
-      const walletData = {
-        username,
-        did,
-        publicKey: keyPair.getPublic('hex'),
-        createdAt: new Date().toISOString()
-      }
-      
-      // Save private key securely (in production, use proper key management)
-      saveKeyPairToStorage(keyPair)
-      
-      // Register DID on blockchain
-      const response = await fetch('/api/did/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          did,
-          publicKey: walletData.publicKey
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to register DID on blockchain')
-      }
-
-      localStorage.setItem('identity_wallet', JSON.stringify(walletData))
-      setWallet(walletData)
-      setIsAuthenticated(true)
-      
-      return walletData
-    } catch (error) {
-      console.error('Error creating wallet:', error)
-      throw error
+  const loginWithWallet = async () => {
+    if (!window.ethereum) {
+      throw new Error('MetaMask not installed')
     }
-  }
 
-  const login = (username) => {
-    const storedWallet = localStorage.getItem('identity_wallet')
-    if (storedWallet) {
-      const walletData = JSON.parse(storedWallet)
-      if (walletData.username === username) {
-        setWallet(walletData)
-        setIsAuthenticated(true)
-        return true
-      }
+    const provider = new ethers.BrowserProvider(window.ethereum)
+    const signer = await provider.getSigner()
+    const address = await signer.getAddress()
+
+    // 1️⃣ Get nonce
+    const nonceRes = await fetch(`/api/auth/nonce?address=${address}`)
+    const { nonce } = await nonceRes.json()
+
+    // 2️⃣ Sign nonce
+    const signature = await signer.signMessage(nonce)
+
+    // 3️⃣ Verify signature
+    const verifyRes = await fetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address, signature })
+    })
+
+    const data = await verifyRes.json()
+    if (!verifyRes.ok) {
+      throw new Error(data.error || 'Login failed')
     }
-    return false
+
+    const sessionData = {
+      token: data.token,
+      address,
+      did: data.did,
+      username: data.username || 'User'
+    }
+
+    localStorage.setItem('session', JSON.stringify(sessionData))
+    setSession(sessionData)
+    setIsAuthenticated(true)
+
+    return sessionData
   }
 
   const logout = () => {
-    localStorage.removeItem('identity_wallet')
-    setWallet(null)
+    localStorage.removeItem('session')
+    setSession(null)
     setIsAuthenticated(false)
   }
 
   return (
-    <WalletContext.Provider value={{
-      wallet,
-      isAuthenticated,
-      createWallet,
-      login,
-      logout
-    }}>
+    <WalletContext.Provider
+      value={{
+        session,
+        isAuthenticated,
+        loginWithWallet, // ✅ EXPORTED
+        logout
+      }}
+    >
       {children}
     </WalletContext.Provider>
   )
+}
+
+export function useWallet() {
+  const ctx = useContext(WalletContext)
+  if (!ctx) throw new Error('useWallet must be used inside WalletProvider')
+  return ctx
 }

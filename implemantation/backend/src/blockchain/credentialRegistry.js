@@ -1,98 +1,204 @@
+// src/services/credentialRegistry.js
+const fs = require('fs')
+const path = require('path')
+
 class CredentialRegistry {
   constructor(blockchain) {
-    this.blockchain = blockchain;
-    this._credentials = new Map(); // credId -> { hash, issuerDid, subjectDid, status, issuedAt, revokedAt }
+    this.blockchain = blockchain
+    this._credentials = new Map()
+
+    this.storageDir = path.join(__dirname, '../../storage')
+    this.storagePath = path.join(this.storageDir, 'credentials.json')
+
+    this._ensureStorage()
+    this._loadFromDisk()
   }
 
-  storeCredentialHash({ credentialId, hash, issuerDid, subjectDid }) {
-    const issuedAt = Date.now();
-    const record = {
-      credentialId,
-      hash,
-      issuerDid,
-      subjectDid,
-      status: 'ACTIVE',
-      issuedAt,
-      revokedAt: null
-    };
-    this._credentials.set(credentialId, record);
+  _ensureStorage() {
+    if (!fs.existsSync(this.storageDir)) {
+      fs.mkdirSync(this.storageDir, { recursive: true })
+    }
 
+    if (!fs.existsSync(this.storagePath)) {
+      fs.writeFileSync(
+        this.storagePath,
+        JSON.stringify([], null, 2)
+      )
+    }
+  }
+
+  _loadFromDisk() {
+    try {
+      const raw = fs.readFileSync(this.storagePath, 'utf-8')
+      const records = JSON.parse(raw)
+
+      for (const cred of records) {
+        this._credentials.set(cred.id, cred)
+      }
+    } catch (err) {
+      console.error('⚠️ Failed to load credentials:', err.message)
+    }
+  }
+
+  _saveToDisk() {
+    fs.writeFileSync(
+      this.storagePath,
+      JSON.stringify([...this._credentials.values()], null, 2)
+    )
+  }
+
+  issueCredential({ issuerDid, subjectDid, type, claims }) {
+    const id = `vc:${Date.now()}`
+
+    const credential = {
+      id,
+      type,
+      issuer: issuerDid,
+      subjectDid,
+      claims,
+      issuanceDate: new Date().toISOString(),
+      revoked: false
+    }
+
+    this._credentials.set(id, credential)
+    this._saveToDisk()
+
+    // Anchor credential hash on blockchain
     this.blockchain.addBlock({
       type: 'VC',
       payload: {
         op: 'ISSUE',
-        ...record
+        credentialId: id,
+        issuer: issuerDid,
+        subject: subjectDid
       }
-    });
+    })
 
-    return record;
+    return credential
   }
 
-  revokeCredential(credentialId, reason) {
-    const existing = this._credentials.get(credentialId);
-    if (!existing) throw new Error('Credential not found');
-    const revokedAt = Date.now();
-    const updated = {
-      ...existing,
-      status: 'REVOKED',
-      revokedAt,
-      revokeReason: reason || 'unspecified'
+  addCredentialHash({ credentialId, hash, issuerDid, subjectDid }) {
+    const tx = {
+      type: 'CREDENTIAL_ISSUED',
+      vcId: credentialId,
+      vcHash: hash,
+      issuerDid,
+      subjectDid,
+      timestamp: Date.now()
     };
-    this._credentials.set(credentialId, updated);
 
-    this.blockchain.addBlock({
-      type: 'VC',
-      payload: {
-        op: 'REVOKE',
-        credentialId,
-        revokedAt,
-        reason: updated.revokeReason
-      }
-    });
-
-    return updated;
-  }
-
-  getCredentialRecord(credentialId) {
-    return this._credentials.get(credentialId) || null;
-  }
-
-  verifyExistence(credentialId, hash) {
-    const record = this._credentials.get(credentialId);
-    if (!record) return { exists: false };
-    return {
-      exists: true,
-      matchesHash: record.hash === hash,
-      status: record.status,
-      issuedAt: record.issuedAt,
-      revokedAt: record.revokedAt
-    };
+    this.blockchain.addBlock([tx]);
+    return tx;
   }
 
   getCredentialsBySubject(subjectDid) {
-    const credentials = [];
-    for (const [credentialId, record] of this._credentials.entries()) {
-      if (record.subjectDid === subjectDid) {
-        // Query blockchain for full record
-        const blocks = this.blockchain.queryByPredicate(
-          (data) => data.type === 'VC' && 
-                     data.payload.credentialId === credentialId
-        );
-        const latestBlock = blocks[blocks.length - 1];
-        
-        credentials.push({
-          id: credentialId,
-          issuer: record.issuerDid,
-          type: 'VerifiableCredential', // Would be stored in VC itself
-          issuanceDate: new Date(record.issuedAt).toISOString(),
-          revoked: record.status === 'REVOKED',
-          revokedAt: record.revokedAt ? new Date(record.revokedAt).toISOString() : null
-        });
+    const results = [];
+
+    for (const block of this.blockchain.chain) {
+      if (!Array.isArray(block.data)) continue;
+
+      for (const tx of block.data) {
+        if (
+          tx.type === 'CREDENTIAL_ISSUED' &&
+          tx.subjectDid === subjectDid
+        ) {
+          results.push(tx);
+        }
       }
     }
-    return credentials;
+
+    return results;
   }
+
+
+  getCredentialHash(vcId) {
+    for (const block of this.blockchain.chain) {
+      const data = Array.isArray(block.data)
+        ? block.data
+        : [block.data]; // 🔥 normalize
+
+      for (const tx of data) {
+        if (
+          tx &&
+          tx.type === 'CREDENTIAL_ISSUED' &&
+          tx.vcId === vcId
+        ) {
+          return tx.vcHash;
+        }
+      }
+    }
+    return null;
+  }
+
+
+  revokeCredential(credentialId) {
+      const cred = this._credentials.get(credentialId)
+      if (!cred) return null
+
+      cred.revoked = true
+      this._saveToDisk()
+
+      this.blockchain.addBlock({
+        type: 'VC',
+        payload: {
+          op: 'REVOKE',
+          credentialId
+        }
+      })
+
+      return cred
+    }
+    verifyExistence(vcId, computedHash) {
+    const storedHash = this.getCredentialHash(vcId);
+
+    if (!storedHash) {
+      return {
+        exists: false,
+        reason: 'Credential not anchored on blockchain'
+      };
+    }
+
+    if (storedHash !== computedHash) {
+      return {
+        exists: false,
+        reason: 'Hash mismatch'
+      };
+    }
+
+    return {
+      exists: true,
+      reason: 'Credential verified successfully'
+    };
+  }
+  /**
+ * ✅ Unified verification entry point
+ * Used by routes, tests, frontend, and panel
+ */
+  verifyCredential({ credentialId, vc }) {
+    if (!credentialId || !vc) {
+      throw new Error('credentialId and vc are required');
+    }
+
+    const canonicalize = require('canonicalize');
+    const crypto = require('crypto');
+
+    const vcString = canonicalize(vc);
+    const computedHash = crypto
+      .createHash('sha256')
+      .update(vcString)
+      .digest('hex');
+
+    const result = this.verifyExistence(credentialId, computedHash);
+
+    return {
+      credentialId,
+      computedHash,
+      ...result
+    };
+  }
+
+
 }
 
-module.exports = CredentialRegistry;
-
+// ✅ CommonJS export
+module.exports = CredentialRegistry
