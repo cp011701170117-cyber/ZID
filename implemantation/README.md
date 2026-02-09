@@ -1,239 +1,141 @@
-# Decentralized Identity Verification System
+# ZID – Decentralized Identity Verification System
 
-A full-stack decentralized identity verification platform using W3C DIDs and Verifiable Credentials with a custom Node.js blockchain implementation.
+## 📌 Project Overview
 
-## 🎯 Project Overview
+ZID is a **blockchain-based decentralized identity (DID) verification system** designed to securely issue, store, and verify digital identities and credentials without relying on a centralized authority.
 
-This academic-grade prototype implements a decentralized identity system where:
-- **Blockchain** serves as a trust anchor for hashes, public keys, timestamps, and revocation records
-- **Sensitive data** remains off-chain (stored in IPFS or client-side)
-- **Private keys** never leave the client device
-- **Selective disclosure** enables privacy-preserving credential sharing
+The system leverages **blockchain technology**, **IPFS**, and **verifiable credentials** to ensure data integrity, privacy, and trustless verification between issuers, holders, and verifiers.
 
-## 🏗️ Architecture
+---
 
-### Layers
+## 🎯 Objectives
 
-1. **Frontend Identity Wallet** (`frontend-wallet/`)
-   - User registration/login
-   - DID generation and display
-   - Credential viewing and management
-   - Verification request approval/rejection
-   - Client-side private key storage
+* Eliminate centralized identity storage risks
+* Enable user-controlled digital identities (Self-Sovereign Identity)
+* Provide tamper-proof credential verification
+* Ensure secure authentication and authorization
 
-2. **Frontend Issuer Dashboard** (`frontend-issuer/`)
-   - Issue verifiable credentials
-   - Digitally sign credentials
-   - Hash and anchor documents on blockchain
-   - Revoke credentials
-   - View issuance history
+---
 
-3. **Core Identity Layer** (`backend/src/blockchain/`)
-   - DID Generator: Creates `did:custom:<sha256>` format DIDs
-   - Key Management: Client-side key vault with signature generation/verification
-   - DID Registry: Stores public keys and DID mappings on blockchain
+## 🏗️ System Architecture
 
-4. **Credential Layer** (`backend/src/services/`)
-   - VC Issuer: Creates JSON-LD Verifiable Credentials
-   - Wallet Storage: Stores VCs in IPFS, hashes on blockchain
-   - Verification Engine: Verifies issuer signatures, checks revocation, validates timestamps
+The project follows a **three-entity DID model**:
 
-5. **Blockchain Layer** (`backend/src/blockchain/`)
-   - Custom Node.js blockchain (Proof-of-Authority style)
-   - DID Registry: `registerDID`, `resolveDID`, `rotateKey`
-   - Credential Registry: `storeCredentialHash`, `revokeCredential`, `verifyExistence`
+1. **Issuer** – Issues verifiable credentials
+2. **Wallet Holder** – Owns and manages credentials
+3. **Verifier** – Verifies credentials without accessing private data
 
-6. **Backend API** (`backend/src/`)
-   - Node.js + Express REST API
-   - Blockchain interaction endpoints
-   - VC issuance and verification flows
-   - IPFS coordination
+### Core Technologies:
 
-## 🛠️ Tech Stack
+* **Blockchain** – Stores DID references and credential hashes
+* **IPFS** – Decentralized storage for credential data
+* **JWT & Cryptography** – Secure authentication and signing
+* **Smart Contract Logic (Simulated)** – Registry-based verification
 
-- **Frontend**: React + Vite + Tailwind CSS
-- **Backend**: Node.js + Express
-- **Blockchain**: Custom Node.js blockchain (PoA-style)
-- **Crypto**: elliptic (ECDSA), crypto (SHA-256)
-- **Storage**: IPFS (optional, can work without)
-- **Testing**: Jest (ready for implementation)
+---
 
-## 📋 Prerequisites
+## 🧩 Project Structure
 
-- Node.js 18+ and npm
-- Git
-
-## 🚀 Quick Start
-
-### 1. Install Dependencies
-
-```bash
-# Backend
-cd backend
-npm install
-
-# Frontend Wallet
-cd ../frontend-wallet
-npm install
-
-# Frontend Issuer
-cd ../frontend-issuer
-npm install
+```
+ZID/
+├── implemantation/
+│   ├── backend/
+│   │   ├── src/
+│   │   │   ├── blockchain/        # DID & Credential registries
+│   │   │   ├── controllers/       # Auth & business logic
+│   │   │   ├── middleware/        # Authentication middleware
+│   │   │   ├── models/            # Verifiable Credential models
+│   │   │   ├── routes/            # API routes
+│   │   │   ├── services/          # IPFS & auth services
+│   │   │   └── server.js          # Backend entry point
+│   │   └── package.json
+│   ├── frontend-wallet/           # Wallet holder application
+│   ├── frontend-verifier/         # Verifier application
+│   └── .gitignore
 ```
 
-### 2. Configure Environment
+---
 
-The backend includes a `.env` file with default values. For production, copy `.env.example` and update:
+## ⚙️ Features
+
+* Decentralized Identifier (DID) creation
+* Verifiable Credential issuance
+* IPFS-based credential storage
+* Secure authentication & authorization
+* Credential verification without data exposure
+* Modular backend and frontend design
+
+---
+
+## 🚀 How to Run the Project
+
+### Backend Setup
 
 ```bash
-cd backend
-cp .env.example .env
-# Edit .env with your values
+cd implemantation/backend
+npm install
+npm start
 ```
 
-### 3. Start Development Servers
+### Frontend Wallet
 
-**Terminal 1 - Backend:**
 ```bash
-cd backend
+cd implemantation/frontend-wallet
+npm install
 npm run dev
 ```
-Backend runs on `http://localhost:5000`
 
-**Terminal 2 - Identity Wallet:**
+### Frontend Verifier
+
 ```bash
-cd frontend-wallet
+cd implemantation/frontend-verifier
+npm install
 npm run dev
 ```
-Wallet runs on `http://localhost:3000`
 
-**Terminal 3 - Issuer Dashboard:**
-```bash
-cd frontend-issuer
-npm run dev
-```
-Issuer runs on `http://localhost:3001`
+---
 
-## 📖 How It Works
+## 🔐 Security Considerations
 
-### DID Generation Flow
+* Private keys and secrets are **never committed**
+* Credential integrity ensured via cryptographic hashing
+* Authorization enforced using middleware
+* Decentralized storage prevents single point of failure
 
-1. User opens Identity Wallet
-2. Creates new wallet with username
-3. Client generates ECDSA keypair (secp256k1)
-4. DID is created: `did:custom:<sha256(publicKey)>`
-5. Public key and DID are registered on blockchain
-6. Private key stays in browser localStorage (client-side only)
-
-### Credential Issuance Flow
-
-1. Issuer opens Issuer Dashboard
-2. Fills form with recipient DID, credential type, and subject data
-3. Backend creates Verifiable Credential (JSON-LD format)
-4. VC is stored in IPFS (or mock storage)
-5. VC hash is computed and anchored on blockchain
-6. VC is returned to issuer, who delivers it to wallet
-
-### Verification Flow
-
-1. Verifier requests credential verification
-2. Wallet owner approves/rejects request
-3. If approved, wallet sends VC (or selective attributes) to verifier
-4. Verifier computes VC hash and queries blockchain
-5. Blockchain confirms hash match and revocation status
-6. Verification result returned
-
-### Selective Disclosure
-
-- Wallet can share only specific credential attributes
-- Full credential never exposed unnecessarily
-- Privacy-preserving verification
-
-## 🔐 Security Features
-
-- **Client-side key storage**: Private keys never leave the browser
-- **Hash-only blockchain**: Only hashes stored on-chain, not sensitive data
-- **ECDSA signatures**: Cryptographic proof of ownership
-- **Revocation support**: Credentials can be revoked and checked
-- **Timestamp validation**: All operations timestamped on blockchain
-
-## 📁 Project Structure
-
-```
-.
-├── backend/
-│   ├── src/
-│   │   ├── blockchain/
-│   │   │   ├── block.js              # Block structure
-│   │   │   ├── blockchain.js         # Main blockchain
-│   │   │   ├── didRegistry.js        # DID operations
-│   │   │   └── credentialRegistry.js # VC operations
-│   │   ├── services/
-│   │   │   ├── ipfsClient.js         # IPFS integration
-│   │   │   └── vcService.js           # VC creation/management
-│   │   ├── routes/
-│   │   │   ├── didRoutes.js          # DID API endpoints
-│   │   │   └── credentialRoutes.js   # VC API endpoints
-│   │   └── server.js                  # Express server
-│   ├── package.json
-│   └── .env
-├── frontend-wallet/
-│   ├── src/
-│   │   ├── pages/                    # React pages
-│   │   ├── context/                  # Wallet context
-│   │   ├── utils/                    # Crypto utilities
-│   │   └── App.jsx
-│   └── package.json
-├── frontend-issuer/
-│   ├── src/
-│   │   ├── pages/                    # Issuer pages
-│   │   └── App.jsx
-│   └── package.json
-└── README.md
-```
-
-## 🔌 API Endpoints
-
-### DID Endpoints
-
-- `POST /api/did/register` - Register a new DID
-- `GET /api/did/resolve/:did` - Resolve a DID
-
-### Credential Endpoints
-
-- `POST /api/credentials/issue` - Issue a new credential
-- `POST /api/credentials/:id/revoke` - Revoke a credential
-- `GET /api/credentials/wallet/:did` - Get credentials for a DID
-- `POST /api/credentials/verify` - Verify a credential
-
-### System Endpoints
-
-- `GET /api/health` - Health check
-- `GET /api/chain` - View blockchain (for debugging)
+---
 
 ## 🧪 Testing
 
-```bash
-cd backend
-npm test
-```
+* Backend test cases included for blockchain and IPFS modules
+* Credential issuance and verification flows validated
 
-## 📝 Notes
+---
 
-- This is an **academic prototype**, not production-ready
-- IPFS is optional - system works without it (uses mock storage)
-- Blockchain is in-memory (resets on server restart)
-- For production, implement persistent storage and proper key management
+## 📚 Use Cases
 
-## 🤝 Contributing
+* Academic credential verification
+* Digital identity management
+* KYC without centralized storage
+* Secure document verification
 
-This is an academic project. Feel free to fork and extend for learning purposes.
+---
+
+## 🧠 Future Enhancements
+
+* Smart contract deployment on Ethereum
+* Zero-Knowledge Proof (ZKP) integration
+* Mobile wallet support
+* Role-based access control
+
+---
+
+## 👩‍💻 Author
+
+**Zee**
+Cybersecurity & Blockchain Enthusiast
+
+---
 
 ## 📄 License
 
-Academic use only.
-
-## 🙏 Acknowledgments
-
-- W3C DID and Verifiable Credentials specifications
-- Academic research in decentralized identity systems
+This project is for academic and educational purposes.
