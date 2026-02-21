@@ -1,12 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Verifier Portal</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <title>Verifier Portal</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+
+  <div class="container">
+    <h1>Verifier Portal</h1>
+
+    <div class="card">
+      <label for="vcId">Credential ID</label>
+      <input type="text" id="vcId" placeholder="Enter VC ID">
+      <button id="verifyBtn">Verify Credential</button>
+    </div>
+
+    <div id="resultContainer"></div>
+  </div>
+
+  <script type="module" src="./src/verify.js"></script>
+</body>
 </html>

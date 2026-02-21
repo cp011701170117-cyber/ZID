@@ -22,7 +22,10 @@ exports.generateNonce = (req, res) => {
     }
 
     const nonce = crypto.randomBytes(16).toString('hex');
-    nonceStore.set(address.toLowerCase(), nonce);
+    nonceStore.set(address.toLowerCase(), {
+      nonce,
+      createdAt: Date.now()
+    });
 
     return res.json({ nonce });
   } catch (err) {
@@ -43,12 +46,14 @@ exports.verifyLogin = async (req, res) => {
       return res.status(400).json({ error: 'address and signature required' });
     }
 
-    const nonce = nonceStore.get(address.toLowerCase());
     if (!nonce) {
       return res.status(400).json({ error: 'Nonce not found' });
     }
 
-    const recoveredAddress = ethers.verifyMessage(nonce, signature);
+    const message = `Login request for DID authentication.\nNonce: ${nonce}`;
+    const recoveredAddress = ethers.verifyMessage(message, signature);
+
+
     if (recoveredAddress.toLowerCase() !== address.toLowerCase()) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
@@ -57,6 +62,10 @@ exports.verifyLogin = async (req, res) => {
     const { didRegistry } = require('../blockchain/registryInstance');
 
     let didRecord = didRegistry.getDIDByAddress(address);
+    if (didRecord && didRegistry.isRevoked(didRecord.did)) {
+      return res.status(403).json({ error: 'DID is revoked' });
+    }
+
 
     // Auto-register DID if not exists
     if (!didRecord) {
@@ -67,7 +76,18 @@ exports.verifyLogin = async (req, res) => {
     }
 
     // One-time nonce usage
-    nonceStore.delete(address.toLowerCase());
+    const record = nonceStore.get(address.toLowerCase());
+    if (!record) {
+      return res.status(400).json({ error: 'Nonce not found' });
+    }
+
+    const { nonce, createdAt } = record;
+
+    // Expire nonce after 5 minutes
+    if (Date.now() - createdAt > 5 * 60 * 1000) {
+      nonceStore.delete(address.toLowerCase());
+      return res.status(400).json({ error: 'Nonce expired' });
+    }
 
     const token = jwt.sign(
       {

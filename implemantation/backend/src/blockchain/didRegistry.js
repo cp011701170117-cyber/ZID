@@ -88,6 +88,71 @@ class DIDRegistry {
   resolveDID(did) {
     return this._dids.get(did) || null;
   }
+  /* =====================================================
+   REVOKE DID
+===================================================== */
+revokeDID(did, reason = 'No reason provided') {
+  const record = this._dids.get(did);
+  if (!record) return null;
+
+  // mark as revoked
+  record.revoked = true;
+  record.revokedReason = reason;
+  record.revokedAt = Date.now();
+
+  this._saveToDisk();
+
+  // anchor on blockchain
+  this.blockchain.addBlock({
+    type: 'DID',
+    payload: {
+      op: 'REVOKE',
+      did,
+      reason,
+      timestamp: record.revokedAt
+    }
+  });
+
+  return record;
+}
+
+/* =====================================================
+   ROTATE DID PUBLIC KEY
+===================================================== */
+rotateDIDKey(did, newPublicKeyPem) {
+  const record = this._dids.get(did);
+  if (!record || record.revoked) return null;
+
+  const oldKey = record.publicKeyPem;
+  record.publicKeyPem = newPublicKeyPem;
+  record.updatedAt = Date.now();
+
+  this._saveToDisk();
+
+  // anchor on blockchain
+  this.blockchain.addBlock({
+    type: 'DID',
+    payload: {
+      op: 'ROTATE_KEY',
+      did,
+      oldKey,
+      newKey: newPublicKeyPem,
+      timestamp: record.updatedAt
+    }
+  });
+
+  return record;
+}
+
+
+  /* =====================================================
+    CHECK IF DID IS REVOKED
+  ===================================================== */
+  isRevoked(did) {
+    const record = this._dids.get(did);
+    return record ? !!record.revoked : false;
+  }
+
 }
 
 module.exports = DIDRegistry;

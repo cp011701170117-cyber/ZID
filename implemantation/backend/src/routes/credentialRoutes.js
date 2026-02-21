@@ -1,9 +1,10 @@
 // src/routes/credentialRoutes.js
 const express = require('express');
-const fs = require('fs');
 const crypto = require('crypto');
-const { createVerifiableCredential, hashCredential } = require('../models/VerifiableCredential');
-const { uploadToIPFS } = require('../services/ipfsService');
+const { issueCredentialSchema } = require('../validators/credentialValidator');
+const { createVerifiableCredential } = require('../models/VerifiableCredential');
+const authMiddleware = require('../middleware/authMiddleware');
+const validate = require('../middleware/validate');
 
 function createCredentialRouter(credentialRegistry) {
   const router = express.Router();
@@ -11,66 +12,103 @@ function createCredentialRouter(credentialRegistry) {
   // -------------------------
   // ISSUE CREDENTIAL
   // -------------------------
-  router.post('/issue', async (req, res) => {
-    try {
-      const {
-        issuerDid = process.env.ISSUER_DID || 'did:custom:issuer',
-        subjectDid,
-        credentialType,
-        claims,
-        tempFilePath // optional: if sending files to IPFS
-      } = req.body;
+  router.post(
+    '/issue',
+    authMiddleware,
+    validate(issueCredentialSchema),
+    async (req, res) => {
+      try {
+        const issuerDid = req.user.did; // 🔒 always from JWT
+        const { subjectDid, credentialType = "CustomCredential", claims } = req.body;
 
-      if (!subjectDid || !claims) {
-        return res.status(400).json({ error: 'subjectDid and claims are required' });
+        // 1️⃣ Create VC
+        const vc = createVerifiableCredential({
+          issuerDid,
+          subjectDid,
+          credentialType,
+          claims
+        });
+
+        const unsignedVc = { ...vc };
+        delete unsignedVc.proof;
+
+        const { signData } = require("../services/cryptoService");
+
+        const proof = {
+          type: "RsaSignature2018",
+          created: new Date().toISOString(),
+          proofPurpose: "assertionMethod",
+          verificationMethod: `${issuerDid}#key-1`,
+          jws: signData(unsignedVc)
+        };
+
+        vc.proof = proof;
+
+        // 2️⃣ Canonical Hash
+        const canonicalize = require('canonicalize');
+        const canonical = canonicalize(vc);
+
+        const vcHash = crypto
+          .createHash('sha256')
+          .update(canonical)
+          .digest('hex');
+
+        // 3️⃣ Upload to IPFS
+        const { uploadJSONToIPFS } = require('../services/ipfsService');
+        const ipfsResult = await uploadJSONToIPFS(vc);
+
+        // 4️⃣ Anchor
+        const anchor = credentialRegistry.addCredentialHash({
+          credentialId: vc.id,
+          hash: vcHash,
+          cid: ipfsResult.cid,
+          issuerDid,
+          subjectDid
+        });
+
+        return res.status(201).json({
+          message: 'Credential issued successfully',
+          vcId: vc.id,
+          vcHash,
+          ipfsCid: ipfsResult.cid,
+          anchor,
+          vc
+        });
+
+      } catch (err) {
+        console.error('Credential issuance error:', err);
+        return res.status(500).json({ error: err.message });
       }
-
-      // 1️⃣ Upload file to IPFS if provided
-      let ipfsResult = null;
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
-        ipfsResult = await uploadToIPFS(tempFilePath, 'evidence.json');
-        fs.unlinkSync(tempFilePath); // cleanup
-      }
-
-      // 2️⃣ Create VC
-      const vc = createVerifiableCredential({
-        issuerDid,
-        subjectDid,
-        credentialType,
-        claims,
-        ipfsCid: ipfsResult ? ipfsResult.cid : null
-      });
-
-      // 3️⃣ Hash VC
-      const vcHash = hashCredential(vc);
-
-      // 4️⃣ Store hash on blockchain
-      const anchor = credentialRegistry.addCredentialHash(vc.id, vcHash, issuerDid);
-
-      return res.status(201).json({
-        message: 'Credential issued successfully',
-        vcId: vc.id,
-        vcHash,
-        ipfsCid: ipfsResult ? ipfsResult.cid : null,
-        anchor,
-        vc
-      });
-    } catch (err) {
-      console.error('Credential issuance error:', err);
-      return res.status(500).json({ error: err.message });
     }
-  });
+  );
 
   // -------------------------
   // REVOKE CREDENTIAL
   // -------------------------
-  router.post('/revoke', (req, res) => {
+  router.post('/revoke', authMiddleware, (req, res) => {
     try {
       const { credentialId, reason } = req.body;
-      if (!credentialId) return res.status(400).json({ error: 'credentialId is required' });
+      const issuerDid = req.user.did; // 🔒 from token
 
-      const revoked = credentialRegistry.revokeCredential(credentialId, reason || 'No reason provided');
-      return res.json({ message: 'Credential revoked', revoked });
+      if (!credentialId) {
+        return res.status(400).json({ error: 'credentialId is required' });
+      }
+
+      const result = credentialRegistry.revokeCredential(
+        credentialId,
+        issuerDid,
+        reason || 'No reason provided'
+      );
+
+      if (result.error) {
+        return res.status(400).json(result);
+      }
+
+      return res.json({
+        message: 'Credential revoked successfully',
+        revoked: result
+      });
+
     } catch (err) {
       console.error('Credential revocation error:', err);
       return res.status(500).json({ error: err.message });
@@ -102,33 +140,130 @@ function createCredentialRouter(credentialRegistry) {
     }
   });
 
-  // -------------------------
-  // VERIFY CREDENTIAL
-  // -------------------------
-  router.post('/verify', (req, res) => {
-    try {
-      const { vc } = req.body;
-      if (!vc || !vc.id) return res.status(400).json({ error: 'VC object with id is required' });
+ 
+// -------------------------
+// VERIFY VC (POST /verify)
+// -------------------------
+router.post('/verify', (req, res) => {
+  try {
+    const { vc } = req.body;
 
-      // Compute local hash
-      const computedHash = crypto.createHash('sha256').update(JSON.stringify(vc)).digest('hex');
-
-      // Fetch blockchain hash
-      const onChainHash = credentialRegistry.getCredentialHash(vc.id);
-
-      const valid = computedHash === onChainHash;
-
-      return res.json({
-        valid,
-        computedHash,
-        onChainHash,
-        message: valid ? 'Credential verified successfully' : 'Verification failed'
-      });
-    } catch (err) {
-      console.error('Credential verification error:', err);
-      return res.status(500).json({ error: err.message });
+    if (!vc || !vc.id) {
+      return res.status(400).json({ error: 'VC object with id is required' });
     }
-  });
+
+    const { verifySignature } = require('../services/cryptoService');
+
+    // -------------------------
+    // 1️⃣ Check Signature
+    // -------------------------
+    if (!vc.proof || !vc.proof.jws) {
+      return res.status(400).json({ error: 'VC proof missing' });
+    }
+
+    const { proof, ...unsignedVc } = vc;
+
+    const signatureValid = verifySignature(unsignedVc, proof.jws);
+
+    if (!signatureValid) {
+      return res.json({
+        credentialId: vc.id,
+        exists: false,
+        reason: 'Invalid issuer signature'
+      });
+    }
+
+    // -------------------------
+    // 2️⃣ Check Blockchain Anchor
+    // -------------------------
+    const blockchainResult = credentialRegistry.verifyCredential({
+      credentialId: vc.id,
+      vc
+    });
+
+    // -------------------------
+    // 3️⃣ Return Combined Result
+    // -------------------------
+    return res.json({
+      credentialId: vc.id,
+      signatureValid,
+      ...blockchainResult
+    });
+
+  } catch (err) {
+    console.error('Credential verification error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+// -------------------------
+// VERIFY VC BY CID (Fetch from IPFS + Signature + Blockchain)
+// -------------------------
+router.post('/verify-by-cid', async (req, res) => {
+  try {
+    const { cid } = req.body;
+
+    if (!cid) {
+      return res.status(400).json({ error: 'CID is required' });
+    }
+
+    const { fetchFromIPFS } = require('../services/ipfsService');
+    const vc = await fetchFromIPFS(cid);
+
+    if (!vc || !vc.id) {
+      return res.status(400).json({ error: 'Invalid VC structure from IPFS' });
+    }
+
+    const { verifySignature } = require('../services/cryptoService');
+
+    // -------------------------
+    // 1️⃣ Check Signature
+    // -------------------------
+    if (!vc.proof || !vc.proof.jws) {
+      return res.status(400).json({ error: 'VC proof missing' });
+    }
+
+    // Remove proof to verify only the actual VC content
+    const { proof, ...unsignedVc } = vc;
+
+    const signatureValid = verifySignature(unsignedVc, proof.jws);
+
+    if (!signatureValid) {
+      return res.json({
+        cid,
+        credentialId: vc.id,
+        exists: false,
+        reason: 'Invalid issuer signature'
+      });
+    }
+
+    // -------------------------
+    // 2️⃣ Check Blockchain Anchor
+    // -------------------------
+    const blockchainResult = credentialRegistry.verifyCredential({
+      credentialId: vc.id,
+      vc
+    });
+
+    // -------------------------
+    // 3️⃣ Return Combined Result
+    // -------------------------
+    return res.json({
+      cid,
+      credentialId: vc.id,
+      signatureValid,
+      ...blockchainResult
+    });
+
+  } catch (err) {
+    console.error('Verify by CID error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+
 
   return router;
 }

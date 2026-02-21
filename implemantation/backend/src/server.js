@@ -37,6 +37,24 @@ app.get('/api/health', (req, res) => {
 // Expose blockchain
 app.get('/api/chain', (req, res) => res.json(chain.chain));
 
+
+app.get('/chain/verify', (req, res) => {
+  const isValid = chain.isChainValid();
+  res.json({ valid: isValid });
+});
+
+app.get('/block/:index/verify', (req, res) => {
+  const index = parseInt(req.params.index);
+  const block = chain.chain[index];
+
+  if (!block) {
+    return res.status(404).json({ error: 'Block not found' });
+  }
+
+  const valid = blockchain.verifyBlockSignature(block);
+  res.json({ index, valid });
+});
+
 // Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`DID VC backend listening on port ${PORT}`));

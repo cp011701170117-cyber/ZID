@@ -1,89 +1,60 @@
-const vcInput = document.getElementById('vcIdInput');
 const verifyBtn = document.getElementById('verifyBtn');
-const resultDiv = document.getElementById('result');
-const historyBody = document.getElementById('historyBody');
-
-const history = [];
-document.getElementById('app').innerHTML = `
-  <div class="min-h-screen flex items-center justify-center bg-gray-100">
-    <div class="bg-white p-6 rounded-lg shadow-lg w-96">
-      <h1 class="text-2xl font-bold mb-4 text-center">Verifier Portal</h1>
-      <input
-        class="w-full border px-3 py-2 rounded mb-3"
-        placeholder="Enter VC ID"
-      />
-      <button
-        class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
-      >
-        Verify Credential
-      </button>
-    </div>
-  </div>
-`;
-
+const vcIdInput = document.getElementById('vcId');
+const resultContainer = document.getElementById('resultContainer');
 
 verifyBtn.addEventListener('click', async () => {
-  const vcId = vcInput.value.trim();
-  if (!vcId) return alert('Please enter a credential ID');
+  const vcId = vcIdInput.value.trim();
+  if (!vcId) return alert('Please enter a VC ID');
 
-  resultDiv.classList.add('hidden');
-  resultDiv.innerHTML = '';
+  resultContainer.innerHTML = `<p class="text-gray-300">Verifying...</p>`;
 
   try {
-    const res = await fetch(`http://localhost:5000/api/credentials/verify`, {
+    const response = await fetch(`http://localhost:5000/api/credentials/session/${vcId}`);
+    if (!response.ok) throw new Error('VC not found');
+
+    const { credentials } = await response.json();
+    if (!credentials || credentials.length === 0) {
+      resultContainer.innerHTML = `<p class="text-red-500 font-bold">No credential found for this ID</p>`;
+      return;
+    }
+
+    const vc = credentials[0]; // assuming one VC per ID
+    const verifyRes = await fetch('http://localhost:5000/api/credentials/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credentialId: vcId, vc: { id: vcId } })
+      body: JSON.stringify({ credentialId: vc.vcId, vc })
     });
-    const data = await res.json();
 
-    const timestamp = new Date().toLocaleString();
-    history.push({ ...data, timestamp });
+    const verifyData = await verifyRes.json();
 
-    // Show result card
-    if (data.exists) {
-      resultDiv.className = 'mt-4 p-4 rounded shadow bg-green-100 text-green-800';
-      resultDiv.innerHTML = `
-        <h2 class="font-bold text-lg mb-2">✅ Credential Verified</h2>
-        <p><strong>VC ID:</strong> ${data.credentialId}</p>
-        <p><strong>Hash:</strong> ${data.computedHash}</p>
-        <p><strong>Reason:</strong> ${data.reason}</p>
-      `;
-    } else {
-      resultDiv.className = 'mt-4 p-4 rounded shadow bg-red-100 text-red-800';
-      resultDiv.innerHTML = `
-        <h2 class="font-bold text-lg mb-2">❌ Verification Failed</h2>
-        <p><strong>VC ID:</strong> ${data.credentialId}</p>
-        <p><strong>Reason:</strong> ${data.reason}</p>
-      `;
-    }
-    resultDiv.classList.remove('hidden');
+    resultContainer.innerHTML = `
+      <div class="bg-gray-800 p-6 rounded-xl shadow-lg animate-fadeIn">
+        <h2 class="text-xl font-bold mb-2 text-cyan-400">Credential Verification</h2>
+        <p><span class="font-semibold">VC ID:</span> ${vc.vcId}</p>
+        <p><span class="font-semibold">Subject DID:</span> ${vc.subjectDid}</p>
+        <p><span class="font-semibold">Issuer DID:</span> ${vc.issuerDid}</p>
+        <p><span class="font-semibold">Status:</span> 
+          <span class="${verifyData.exists ? 'text-green-400 font-bold' : 'text-red-500 font-bold'}">
+            ${verifyData.exists ? 'Verified ✅' : 'Invalid ❌'}
+          </span>
+        </p>
+      </div>
+    `;
 
-    renderHistory();
   } catch (err) {
-    alert('Error connecting to backend: ' + err.message);
+    resultContainer.innerHTML = `<p class="text-red-500 font-bold">Error: ${err.message}</p>`;
   }
 });
-
-function renderHistory() {
-  historyBody.innerHTML = '';
-  history.slice().reverse().forEach(item => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td class="px-4 py-2">${item.credentialId}</td>
-      <td class="px-4 py-2 break-all">${item.computedHash || '-'}</td>
-      <td class="px-4 py-2">${item.exists ? '✅ Verified' : '❌ Failed'}</td>
-      <td class="px-4 py-2">${item.timestamp}</td>
-      <td class="px-4 py-2">
-        <button class="bg-gray-300 px-2 py-1 rounded hover:bg-gray-400" onclick="copyHash('${item.computedHash}')">Copy</button>
-      </td>
-    `;
-    historyBody.appendChild(row);
-  });
-}
-
-window.copyHash = (hash) => {
-  if (!hash) return alert('No hash to copy');
-  navigator.clipboard.writeText(hash);
-  alert('Hash copied to clipboard');
-};
+resultContainer.innerHTML = `
+  <div class="result-card">
+    <p><strong>VC ID:</strong> ${vc.vcId}</p>
+    <p><strong>Subject DID:</strong> ${vc.subjectDid}</p>
+    <p><strong>Issuer DID:</strong> ${vc.issuerDid}</p>
+    <p>
+      <strong>Status:</strong>
+      <span class="${verifyData.exists ? 'success' : 'error'}">
+        ${verifyData.exists ? 'Verified ✅' : 'Invalid ❌'}
+      </span>
+    </p>
+  </div>
+`;

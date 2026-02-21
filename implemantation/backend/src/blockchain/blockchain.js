@@ -3,87 +3,122 @@ const Block = require('./block');
 const fs = require('fs');
 const path = require('path');
 
+
 class Blockchain {
   chain = [];
   validatorId = '';
+  
 
   constructor(validatorId) {
-    this.chain = [Block.genesis()];
+    
+this.chainFile = path.join(__dirname, '../../storage/blockchain.json');
+
+    if (fs.existsSync(this.chainFile)) {
+      const raw = fs.readFileSync(this.chainFile);
+      const parsed = JSON.parse(raw);
+
+      this.chain = parsed.map(blockData => 
+        new Block(
+          blockData.index,
+          blockData.previousHash,
+          blockData.timestamp,
+          blockData.data,
+          blockData.validatorId,
+          blockData.signature,
+          blockData.hash
+        )
+      );
+    } else {
+      this.chain = [Block.genesis()];
+      this.saveChain();
+    }
     this.validatorId = validatorId || 'AUTHORITY_NODE';
   
-    // 🔑 Load validator keys
-    this.validatorPrivateKey = fs.readFileSync(
-      path.join(__dirname, '../../keys/validator.key')
-    );
-  
-    this.validatorPublicKey = fs.readFileSync(
-      path.join(__dirname, '../../keys/validator.pub')
-    );
+   // 🔐 Load Authority RSA keys
+  this.authorityPrivateKey = fs.readFileSync(
+    path.join(__dirname, '../../keys/authority/private.pem'),
+    'utf8'
+  );
+
+  this.authorityPublicKey = fs.readFileSync(
+    path.join(__dirname, '../../keys/authority/public.pem'),
+    'utf8'
+  );
+
   }
 
   // ✅ Get the latest block
   getLatestBlock = () => this.chain[this.chain.length - 1];
 
   // ✅ Add a new block
-addBlock(data) {
-  const previousBlock = this.getLatestBlock();
-  const index = previousBlock.index + 1;
-  const timestamp = Date.now();
+  addBlock(data) {
+    const previousBlock = this.getLatestBlock();
+    const index = previousBlock.index + 1;
+    const timestamp = Date.now();
 
-  // create block WITHOUT signature first
-  let block = new Block(
-    index,
-    previousBlock.hash,
-    timestamp,
-    data,
-    this.validatorId,
-    ''
-  );
+    const block = new Block(
+      index,
+      previousBlock.hash,
+      timestamp,
+      data,
+      this.validatorId,
+      null
+    );
 
-  // sign the hash
-  block.signature = this.signBlockHash(block.hash);
+    // hash already calculated in constructor
+    block.signature = this.signBlockHash(block.hash);
 
-  // recalculate hash AFTER signature
-  block.hash = block.calculateHash();
+    if (!this.isValidNewBlock(block, previousBlock)) {
+      throw new Error('Invalid block');
+    }
 
-  if (!this.isValidNewBlock(block, previousBlock)) {
-    throw new Error('Invalid block');
+    this.chain.push(block);
+    this.saveChain()
+    return block;
   }
 
-  this.chain.push(block);
-  return block;
-}
-  // ✅ Sign a block hash with HMAC (PoA-style)
-  signBlockHash = (hash) => {
-    const secret = process.env.AUTHORITY_SECRET || 'dev-secret';
-    return crypto.createHmac('sha256', secret).update(hash).digest('hex');
-  };
+
+  // ✅ Sign a block hash with RAC (PoA-style)
+  signBlockHash(hash) {
+    const sign = crypto.createSign('RSA-SHA256');
+    sign.update(hash);
+    sign.end();
+
+    return sign.sign(this.authorityPrivateKey, 'hex');
+  }
+
   isValidNewBlock(newBlock, previousBlock) {
-  if (previousBlock.index + 1 !== newBlock.index) {
-    return false;
+    if (previousBlock.index + 1 !== newBlock.index) {
+      return false;
+    }
+
+    if (newBlock.previousHash !== previousBlock.hash) {
+      return false;
+    }
+
+    if (newBlock.calculateHash() !== newBlock.hash) {
+      return false;
+    }
+
+    if (!this.verifyBlockSignature(newBlock)) {
+      return false;
+    }
+
+    return true;
   }
 
-  if (newBlock.previousHash !== previousBlock.hash) {
-    return false;
-  }
-
-  if (newBlock.calculateHash() !== newBlock.hash) {
-    return false;
-  }
-
-  return true;
-}
 
   verifyBlockSignature(block) {
-    if (!block.signature) return false;
-  
-    return crypto.verify(
-      'SHA256',
-      Buffer.from(block.hash),
-      this.validatorPublicKey,   // make sure this exists
+    const verify = crypto.createVerify('RSA-SHA256');
+    verify.update(block.hash);
+    verify.end();
+
+    return verify.verify(
+      this.authorityPublicKey,
       Buffer.from(block.signature, 'hex')
     );
   }
+
   
   // ✅ Check if the full chain is valid
   isChainValid = () => {
@@ -94,9 +129,17 @@ addBlock(data) {
     }
     return true;
   };
+  saveChain() {
+    fs.writeFileSync(
+    this.chainFile,
+    JSON.stringify(this.chain, null, 2)
+    );
+  }
 
   // ✅ Query chain by a predicate
   queryByPredicate = (predicateFn) => this.chain.filter((block) => predicateFn(block.data));
+
+  
 }
 
 module.exports = Blockchain;
