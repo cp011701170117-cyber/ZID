@@ -2,53 +2,54 @@ const crypto = require('crypto');
 const Block = require('./block');
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomicSync } = require('../storage/storageService');
 
 
 class Blockchain {
-  chain = [];
-  validatorId = '';
-  
-
   constructor(validatorId) {
-    
-this.chainFile = path.join(__dirname, '../../storage/blockchain.json');
+    // determine storage file based on environment
+    const filename =
+      process.env.NODE_ENV === 'test'
+        ? 'blockchain.test.json'
+        : 'blockchain.json';
+    this.chainFile = path.join(__dirname, '../../storage', filename);
 
-    if (fs.existsSync(this.chainFile)) {
-      const raw = fs.readFileSync(this.chainFile);
-      const parsed = JSON.parse(raw);
-
-      this.chain = parsed.map(blockData => 
-        new Block(
-          blockData.index,
-          blockData.previousHash,
-          blockData.timestamp,
-          blockData.data,
-          blockData.validatorId,
-          blockData.signature,
-          blockData.hash
-        )
-      );
-    } else {
-      this.chain = [Block.genesis()];
-      this.saveChain();
-    }
+    // initialize properties
+    this.chain = [];
     this.validatorId = validatorId || 'AUTHORITY_NODE';
-  
-   // 🔐 Load Authority RSA keys
-  this.authorityPrivateKey = fs.readFileSync(
-    path.join(__dirname, '../../keys/authority/private.pem'),
-    'utf8'
-  );
 
-  this.authorityPublicKey = fs.readFileSync(
-    path.join(__dirname, '../../keys/authority/public.pem'),
-    'utf8'
-  );
+    // always start fresh at server startup: remove any existing chain file
+    const storageDir = path.dirname(this.chainFile);
+    if (!fs.existsSync(storageDir)) {
+      fs.mkdirSync(storageDir, { recursive: true });
+    }
+    if (fs.existsSync(this.chainFile)) {
+      try {
+        fs.unlinkSync(this.chainFile);
+      } catch (e) {
+        // ignore
+      }
+    }
+    // initialize chain with a single genesis block
+    this.chain = [Block.genesis()];
+    // caller (registryInstance) will persist via saveChain
 
+    // 🔐 Load Authority RSA keys
+    this.authorityPrivateKey = fs.readFileSync(
+      path.join(__dirname, '../../keys/authority/private.pem'),
+      'utf8'
+    );
+
+    this.authorityPublicKey = fs.readFileSync(
+      path.join(__dirname, '../../keys/authority/public.pem'),
+      'utf8'
+    );
   }
 
   // ✅ Get the latest block
-  getLatestBlock = () => this.chain[this.chain.length - 1];
+  getLatestBlock() {
+    return this.chain[this.chain.length - 1];
+  }
 
   // ✅ Add a new block
   addBlock(data) {
@@ -73,10 +74,9 @@ this.chainFile = path.join(__dirname, '../../storage/blockchain.json');
     }
 
     this.chain.push(block);
-    this.saveChain()
+    this.saveChain();
     return block;
   }
-
 
   // ✅ Sign a block hash with RAC (PoA-style)
   signBlockHash(hash) {
@@ -107,7 +107,6 @@ this.chainFile = path.join(__dirname, '../../storage/blockchain.json');
     return true;
   }
 
-
   verifyBlockSignature(block) {
     const verify = crypto.createVerify('RSA-SHA256');
     verify.update(block.hash);
@@ -119,27 +118,25 @@ this.chainFile = path.join(__dirname, '../../storage/blockchain.json');
     );
   }
 
-  
   // ✅ Check if the full chain is valid
-  isChainValid = () => {
+  isChainValid() {
     for (let i = 1; i < this.chain.length; i++) {
       const current = this.chain[i];
       const prev = this.chain[i - 1];
       if (!this.isValidNewBlock(current, prev)) return false;
     }
     return true;
-  };
+  }
+
   saveChain() {
-    fs.writeFileSync(
-    this.chainFile,
-    JSON.stringify(this.chain, null, 2)
-    );
+    // atomic write to prevent corruption
+    writeJsonAtomicSync(this.chainFile, this.chain);
   }
 
   // ✅ Query chain by a predicate
-  queryByPredicate = (predicateFn) => this.chain.filter((block) => predicateFn(block.data));
-
-  
+  queryByPredicate(predicateFn) {
+    return this.chain.filter((block) => predicateFn(block.data));
+  }
 }
 
 module.exports = Blockchain;

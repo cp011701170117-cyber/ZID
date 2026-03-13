@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomicSync } = require('../storage/storageService');
 
 class DIDRegistry {
   constructor(blockchain) {
@@ -18,7 +19,7 @@ class DIDRegistry {
     }
 
     if (!fs.existsSync(this.storagePath)) {
-      fs.writeFileSync(this.storagePath, JSON.stringify([], null, 2))
+      writeJsonAtomicSync(this.storagePath, []);
     }
   }
 
@@ -38,7 +39,7 @@ class DIDRegistry {
 
   _saveToDisk() {
     const records = Array.from(this._dids.values());
-    fs.writeFileSync(this.storagePath, JSON.stringify(records, null, 2));
+    writeJsonAtomicSync(this.storagePath, records);
   }
 
   generateDIDFromAddress(address) {
@@ -54,7 +55,13 @@ class DIDRegistry {
   }
 
   registerDID({ did, publicKeyPem, address }) {
-    address = address.toLowerCase()
+    // normalize inputs so lookups are case-insensitive
+    if (typeof did === 'string') {
+      did = did.toLowerCase();
+    }
+    if (typeof address === 'string') {
+      address = address.toLowerCase();
+    }
 
     if (this._dids.has(did)) {
       return this._dids.get(did) // idempotent
@@ -86,6 +93,7 @@ class DIDRegistry {
 
 
   resolveDID(did) {
+    if (typeof did === 'string') did = did.toLowerCase();
     return this._dids.get(did) || null;
   }
   /* =====================================================
@@ -151,6 +159,66 @@ rotateDIDKey(did, newPublicKeyPem) {
   isRevoked(did) {
     const record = this._dids.get(did);
     return record ? !!record.revoked : false;
+  }
+ 
+  // Approve issuer role
+  approveIssuer(did, approvedBy) {
+    const record = this.resolveDID(did);
+
+    if (!record) {
+      return { error: "DID not found" };
+    }
+
+    record.role = "issuer";
+    record.approved = true;
+    record.approvedBy = approvedBy;
+    record.approvedAt = new Date().toISOString();
+
+    // persist the updated record
+    this._saveToDisk();
+
+    this.blockchain.addBlock({
+      type: "ISSUER_APPROVED",
+      did,
+      approvedBy
+    });
+
+    return record;
+  }
+
+  // Check if DID is approved issuer
+  isApprovedIssuer(did) {
+    if (typeof did === 'string') did = did.toLowerCase();
+    const record = this.resolveDID(did);
+    return record && record.role === "issuer" && record.approved === true;
+  }
+  approveVerifier(did, approvedBy) {
+    const record = this.resolveDID(did);
+
+    if (!record) {
+      return { error: "DID not found" };
+    }
+
+    record.role = "verifier";
+    record.approved = true;
+    record.approvedBy = approvedBy;
+    record.approvedAt = new Date().toISOString();
+
+    this._saveToDisk();
+
+    this.blockchain.addBlock({
+      type: "VERIFIER_APPROVED",
+      did,
+      approvedBy
+    });
+
+    return record;
+  }
+
+  isApprovedVerifier(did) {
+    if (typeof did === 'string') did = did.toLowerCase();
+    const record = this.resolveDID(did);
+    return record && record.role === "verifier" && record.approved === true;
   }
 
 }

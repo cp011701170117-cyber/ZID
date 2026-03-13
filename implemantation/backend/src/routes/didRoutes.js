@@ -7,43 +7,37 @@ function createDidRouter(didRegistry) {
    * POST /api/did/register
    * body: { username, address }
    */
-  router.post('/register', (req, res) => {
+  router.post('/register', async (req, res, next) => {
     try {
-      const { username, address } = req.body
+      const { username, address } = req.body;
 
       if (!username || !address) {
         return res.status(400).json({
           error: 'username and address are required'
-        })
+        });
       }
 
-      // 🔁 Normalize address
-      const normalizedAddress = address.toLowerCase()
+      const normalizedAddress = address.toLowerCase();
 
-      // 🧠 Check if DID already exists for this wallet
-      const existing = didRegistry.getDIDByAddress(normalizedAddress)
+      const existing = didRegistry.getDIDByAddress(normalizedAddress);
       if (existing) {
-        return res.status(200).json(existing)
+        return res.status(200).json(existing);
       }
 
-      // 🆔 Deterministic DID
-      const did = didRegistry.generateDIDFromAddress(normalizedAddress)
+      const did = didRegistry.generateDIDFromAddress(normalizedAddress);
 
-      // ⛓️ Register DID on blockchain
       const record = didRegistry.registerDID({
         did,
-        publicKeyPem: null,   // MetaMask proves ownership
+        publicKeyPem: null,
         address: normalizedAddress
-      })
+      });
 
       return res.status(201).json({
         username,
         ...record
-      })
-
+      });
     } catch (err) {
-      console.error('❌ DID register error:', err)
-      return res.status(500).json({ error: err.message })
+      next(err);
     }
   })
 

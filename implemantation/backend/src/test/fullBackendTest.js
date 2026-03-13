@@ -7,11 +7,8 @@ const jwt = require('jsonwebtoken');
 const { ethers } = require('ethers');
 
 // 🔥 Backend modules
-const {
-  blockchain,
-  didRegistry,
-  credentialRegistry
-} = require('../blockchain/registryInstance');
+const { getRegistryInstance } = require('../blockchain/registryInstance');
+const { blockchain, didRegistry, credentialRegistry } = getRegistryInstance();
 
 const { uploadToIPFS } = require('../services/ipfsService');
 const {

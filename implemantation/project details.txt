@@ -1,0 +1,256 @@
+/ (workspace root)
+├── pinata key.txt
+├── README.md
+├── backend/
+│   ├── 20'                              (unused/unknown)
+│   ├── jest.config.js
+│   ├── jest.setup.js
+│   ├── npm/                             (placeholder)
+│   ├── package.json
+│   ├── sign.js
+│   ├── keys/
+│   │   └── authority/
+│   │       ├── private.pem
+│   │       └── public.pem
+│   ├── src/
+│   │   ├── server.js
+│   │   ├── blockchain/
+│   │   │   ├── block.js
+│   │   │   ├── blockchain.js
+│   │   │   ├── credentialRegistry.js
+│   │   │   ├── didRegistry.js
+│   │   │   └── registryInstance.js
+│   │   ├── controllers/
+│   │   │   ├── authController.js
+│   │   │   └── issuerAuthController.js
+│   │   ├── middleware/
+│   │   │   ├── authMiddleware.js
+│   │   │   ├── roleMiddleware.js
+│   │   │   └── validate.js
+│   │   ├── models/
+│   │   │   └── VerifiableCredential.js
+│   │   ├── routes/
+│   │   │   ├── authRoutes.js
+│   │   │   ├── credentialRoutes.js
+│   │   │   ├── didRoutes.js
+│   │   │   ├── issuerGovernanceRoutes.js
+│   │   │   └── protectedRoutes.js
+│   │   ├── services/
+│   │   │   ├── authService.js
+│   │   │   ├── cryptoService.js
+│   │   │   ├── ipfsClient.js
+│   │   │   ├── ipfsService.js
+│   │   │   └── vcService.js
+│   │   ├── storage/
+│   │   │   ├── dids.json
+│   │   │   └── blockchain.test.json
+│   │   ├── test/
+│   │   │   ├── fullBackendTest.js
+│   │   │   ├── ipfsServiceTest.js
+│   │   │   ├── ipfsTest.js
+│   │   │   ├── sample.txt
+│   │   │   └── testfile.txt
+│   │   └── validators/
+│   │       └── credentialValidator.js
+│   └── storage/
+│       ├── blockchain.test.json
+│       └── dids.json
+├── frontend-issuer/         (React/Vite issuer UI)
+├── frontend-verifier/       (vanilla JS verifier UI)
+├── frontend-wallet/         (React/Vite wallet UI)
+└── sample/                  (archival third‑party demo files)
+🛠 SECTION B — Technology Stack
+Runtime: Node.js (version unspecified; packages suggest ≥18).
+Frameworks/libraries:
+Express.js for HTTP API.
+Joi for request validation.
+Ethers for Ethereum address/signature handling.
+jsonwebtoken & jwt for auth.
+morgan & cors middleware.
+axios, form-data for IPFS interactions.
+canonicalize for deterministic JSON hashing.
+uuid for VC identifiers.
+jest & supertest for tests.
+Cryptographic libraries:
+Node’s built‑in crypto module used extensively (SHA‑256, RSA‑SHA256, randomBytes, signing/verifying).
+ethers.verifyMessage for ECDSA signature recovery (ECDSA/secp256k1).
+Blockchain-related components:
+Custom PoA blockchain implemented in blockchain/.
+Registries built atop blockchain (DID and credential registries).
+🚧 SECTION C — Express Architecture
+Middleware chain order (global in server.js):
+cors()
+express.json()
+morgan('dev')
+Route registration order:
+/api/auth → authRoutes
+/api/did → dynamic router with didRegistry
+/api/credentials → dynamic router with credentialRegistry
+/api/protected → simple authenticated endpoint
+/api/governance → issuer governance router
+health/chain endpoints directly on app
+Server initialization flow:
+require('dotenv').config() loads environment.
+getRegistryInstance() initializes blockchain, registries, bootstraps authority DID, applies environment whitelists.
+Routes wired and app exported.
+App export: module.exports = app; (used by tests).
+Listen handling: Only when require.main === module; port from process.env.PORT || 5000.
+⛓ SECTION D — Blockchain Implementation
+Block structure (block.js):
+Fields: index, previousHash, timestamp, data, validator, signature, hash.
+calculateHash() uses SHA‑256 over concatenated index, previousHash, timestamp, and JSON data.
+Static genesis() returns block with type 'GENESIS'.
+Hashing algorithm: SHA‑256 for both block hash and credential hashes.
+Chain storage:
+JSON file under storage/ – either blockchain.json or blockchain.test.json depending on NODE_ENV.
+blockchain.saveChain() writes full chain with indentation.
+Validation logic:
+isValidNewBlock() checks index continuity, previousHash match, recalculated hash equality, and block signature validity.
+isChainValid() iterates over chain with the above.
+Genesis block: created when storage file absent, not saved until blockchain.saveChain() is invoked by registry instance.
+Persistence model: file‑based, synchronous fs operations; no database. Blocks appended immediately on valid addition.
+🆔 SECTION E — DID & Registry System
+DID creation:
+Deterministic DID: did:custom:${address.toLowerCase()} via didRegistry.generateDIDFromAddress().
+Registration via POST /api/did/register; stores record and anchors on blockchain.
+Approval flow:
+DID registry tracks role (issuer/verifier/authority) and approved flag.
+approveIssuer() and approveVerifier() update record, persist to disk, and add blockchain block.
+registryInstance.js bootstraps authority DID and auto‑approves issuers/verifiers listed in env variables.
+Storage:
+dids.json in storage/ (array of records).
+In‑memory Map mirror loaded at startup.
+Revocation mechanism: revokeDID() marks record, persists, anchors transaction. (Not exposed via API.)
+Revocation index: stored as field on record; isRevoked() checks.
+Issued credential anchors are independent but registries don’t cross‑reference.
+📄 SECTION F — Credential Lifecycle
+Issuance flow (POST /api/credentials/issue):
+Auth and roleMiddleware('issuer') enforce JWT and role.
+DID approval checks: didRegistry.isApprovedIssuer() and credentialRegistry.isIssuerApproved().
+VC created via models/VerifiableCredential.createVerifiableCredential().
+Structure: context, id (randomUUID), type array, issuer, issuanceDate, credentialSubject with id & claims, evidence placeholder.
+Proof generated by signing canonicalized unsigned VC with RSA key (cryptoService.signData).
+Canonical JSON hashed with SHA‑256.
+VC uploaded to IPFS (Pinata) via ipfsService.uploadJSONToIPFS().
+credentialRegistry.addCredentialHash() anchors hash, cid, issuer, subject.
+Response includes vc and metadata.
+Verification flow (POST /api/credentials/verify):
+Auth & roleMiddleware('verifier'); check approved verifier.
+Anchor lookup with credentialRegistry.getCredentialMeta().
+Recompute canonical hash; compare to stored vcHash → tamper detection.
+Check revoked flag.
+Verify RSA signature with cryptoService.verifySignature().
+Ensure issuer DID still approved.
+Return { valid: true/false, reason?, ... }.
+Revocation flow (POST /api/credentials/revoke):
+Auth & issuer role.
+Verify vcId presence and ownership (anchor.issuerDid).
+Call credentialRegistry.revokeCredential(), which:
+Adds CREDENTIAL_REVOKED block.
+Adds id to revokedIndex (in‑memory).
+Respond with success flag; anchor metadata later reflects revocation.
+Canonicalization: using canonicalize package for both signing and hashing.
+Signature verification: RSA‑SHA256 with keys from env or authority keypair loaded from keys/authority.
+🔐 SECTION G — Security Model
+JWT handling:
+Secret from JWT_SECRET env var or default placeholder.
+Tokens signed with jwt.sign(); decoded in authMiddleware with verification.
+Expiration: 1 hour.
+Role enforcement: roleMiddleware checks req.user.role for strict equality.
+Signature verification: RSA signatures on credentials; verification occurs on every check.
+Tamper detection: mismatch between computed canonical hash and blockchain‑stored hash.
+Replay protection: Nonces for login (auth and issuer/auth) expire after 5 min, stored in memory; no reuse allowed. No request‑level replay prevented beyond JWT expiration.
+Expiration handling: JWT expiration enforced by jsonwebtoken; credentials may include expirationDate in vcService but issuance route ignores it.
+Other checks:
+Verifier approval check separately from DID registry.
+Issuer whitelist enforced in issuerAuthController.
+No CSRF, rate‑limiting, or brute‑force protections implemented.
+💾 SECTION H — File Storage & Persistence
+JSON files:
+storage/blockchain.json or blockchain.test.json – full chain persistence.
+storage/dids.json – DID records.
+Writing triggers:
+Chain saved when blocks added.
+DID storage updated on register/approve/revoke/rotate.
+Credential registry indexes rebuilt from chain; revocation index kept in memory.
+Test vs production:
+NODE_ENV === 'test' uses .test.json files and jest setup clears chain file.
+Tests clear storage directory at start.
+Data corruption risks:
+Synchronous writes without backups; crash during write may corrupt file.
+No locking; concurrent access could race (unlikely in single‑process node).
+No schema validation on stored JSON beyond memory compare.
+🧪 SECTION I — Test Coverage
+Test files:
+credentialFlow.test.js – supertest integration covering:
+Issue & verify valid credential.
+Tamper detection.
+Revocation detection.
+Verifier not approved scenario.
+backend/src/test/* – ad‑hoc scripts (not automated jest tests):
+IPFS upload demo.
+Full backend exercise (logging output but not assertions).
+Scopes covered:
+Credential issuance & verification happy path and key failure modes.
+Environment‑based issuer/verifier whitelisting via tokens.
+Gaps:
+DID registry functionality (register, revoke, approve) not tested.
+Block/chain validity, signature checks, persistence not asserted.
+Auth nonce flow and issuer login not exercised.
+Error paths for missing fields, invalid input, permission errors have limited coverage.
+IPFS service error handling absent.
+Front‑end code entirely untested.
+💪 SECTION J — Current Architectural Strengths
+Modular decomposition: clear separation between blockchain, registries, services, and routes.
+Canonicalization use: deterministic hashing/signing reduces variation.
+PoA blockchain: simple but functional for anchoring operations.
+Environment-driven bootstrapping: easy to set up test issuers/verifiers.
+In‑memory caches with persistent backing: acceptable for prototype.
+⚠️ SECTION K — Current Architectural Weaknesses
+State persistence: single file JSON backend without transaction safety.
+Single authority private key stored in repo (keys/authority) – security risk.
+Credentials evidence field not maintained (IPFS CID only).
+CredentialRegistry keeps revocation index only in memory – lost on restart (rebuilds from chain but relies on block scanning).
+No database; scalability and concurrency limited.
+Signature keys from env processed naïvely (no rotation).
+Error handling inconsistent (sometimes throw, sometimes return error objects).
+Login flow duplicates logic across authService and authController.
+Frontends appear separate and not integrated/tested.
+🚀 SECTION L — Production Readiness Assessment
+Not production ready:
+File-based persistence unsuitable for multi-instance or large scale.
+No authentication hardening (JWT secret defaults, no HTTPS enforcement).
+Private key management insecure.
+IPFS dependency optional but ipfsService fails fast if keys missing.
+CORS enabled for all origins.
+Lack of input sanitization beyond simple Joi schemas.
+No logging configuration or monitoring.
+Useful as prototype / proof‑of‑concept only.
+📈 SECTION M — Scalability Constraints
+Storage: entire blockchain reloaded into memory; linear growth.
+I/O: synchronous file operations block event loop.
+Single-threaded Node process; no clustering support.
+Credential lookup scans full chain.
+IPFS uploads synchronous calls to external service (could block).
+No caching of IPFS fetches.
+🕷 SECTION N — Attack Surface Analysis
+Endpoints:
+/api/auth/*, /api/did/*, /api/credentials/*, /api/governance/*.
+All require JWT except health/chain.
+Potential vectors:
+JWT secret compromise or reuse of default (weak).
+Weak nonce storage (in memory, no rate‑limit).
+Issuer whitelist enforced only at login, not again at issuance (relies on credentialRegistry approval).
+Malicious VC with crafted JSON could bypass canonicalization if package vulnerable.
+IPFS service throws errors may crash routes.
+File‑system path injection not present, but static path assumptions.
+RCE risk from unvalidated vc object used in canonicalization? Minimal.
+External dependencies:
+Pinata API keys in env – if stolen, could pin arbitrary data.
+Authority private RSA key contained in repo.
+ipfs-http-client installed but not used; might bring vulnerabilities.
+Unprotected resources: health/chain endpoints expose chain length and blocks publicly.
+📝 End of audit.
+
+No modifications were made during this inspection.
+All information above is derived directly from existing workspace files.

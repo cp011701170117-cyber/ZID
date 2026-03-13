@@ -6,11 +6,15 @@ const canonicalize = require('canonicalize');
 class CredentialRegistry {
   constructor(blockchain) {
     this.blockchain = blockchain;
-    this.index = new Map();      // vcId -> issuance tx
+    // indexes for fast lookups
+    this.index = new Map(); // vcId -> issuance tx
     this.revokedIndex = new Set(); // revoked vcIds
+    this.approvedIssuers = new Set();
+    this.approvedVerifiers = new Set();
+    this.subjectIndex = new Map(); // subjectDid -> [tx,...]
 
     this.rebuildIndex();
-}
+  }
 
 
   /* =====================================================
@@ -21,8 +25,13 @@ class CredentialRegistry {
     hash,
     cid,
     issuerDid,
-    subjectDid
+    subjectDid,
+    expirationDate
   }) {
+    // normalize stored identifiers
+    if (typeof issuerDid === 'string') issuerDid = issuerDid.toLowerCase();
+    if (typeof subjectDid === 'string') subjectDid = subjectDid.toLowerCase();
+
     const tx = {
       type: 'CREDENTIAL_ISSUED',
       vcId: credentialId,
@@ -30,12 +39,18 @@ class CredentialRegistry {
       cid: cid || null,
       issuerDid,
       subjectDid,
+      expirationDate: expirationDate || null,
       timestamp: Date.now(),
       revoked: false
     };
 
     this.blockchain.addBlock([tx]);
-    this.index.set(tx.vcId,tx);
+    this.index.set(tx.vcId, tx);
+    if (subjectDid) {
+      const arr = this.subjectIndex.get(subjectDid) || [];
+      arr.push(tx);
+      this.subjectIndex.set(subjectDid, arr);
+    }
     return tx;
   }
 
@@ -43,22 +58,13 @@ class CredentialRegistry {
      GET FULL METADATA
   ===================================================== */
   getCredentialMeta(vcId) {
-    for (const block of this.blockchain.chain) {
-      const data = Array.isArray(block.data)
-        ? block.data
-        : [block.data];
-
-      for (const tx of data) {
-        if (
-          tx &&
-          tx.type === 'CREDENTIAL_ISSUED' &&
-          tx.vcId === vcId
-        ) {
-          return tx;
-        }
-      }
+    const record = this.index.get(vcId);
+    if (!record) return null;
+    const copy = { ...record };
+    if (this.revokedIndex.has(vcId)) {
+      copy.revoked = true;
     }
-    return null;
+    return copy;
   }
 
   /* =====================================================
@@ -74,25 +80,45 @@ class CredentialRegistry {
      GET BY SUBJECT (For Wallet)
   ===================================================== */
   getCredentialsBySubject(subjectDid) {
-    const results = [];
+    const arr = this.subjectIndex.get(subjectDid);
+    if (!arr) return [];
 
-    for (const block of this.blockchain.chain) {
-      const data = Array.isArray(block.data)
-        ? block.data
-        : [block.data];
+    return arr.map((tx) => {
+      const copy = { ...tx };
+      if (this.revokedIndex.has(tx.vcId)) {
+        copy.revoked = true;
+      }
 
-      for (const tx of data) {
-        if (
-          tx &&
-          tx.type === 'CREDENTIAL_ISSUED' &&
-          tx.subjectDid === subjectDid
-        ) {
-          results.push(tx);
+      // convenience aliases for frontend code
+      copy.id = tx.vcId;
+      copy.recipientDID = tx.subjectDid;
+      copy.issuanceDate = tx.timestamp;
+      if (tx.expirationDate) copy.expirationDate = tx.expirationDate;
+
+      return copy;
+    });
+  }
+
+  /* =====================================================
+     GET BY ISSUER (For Issuer dashboard/history)
+  ===================================================== */
+  getCredentialsByIssuer(issuerDid) {
+    if (typeof issuerDid === 'string') issuerDid = issuerDid.toLowerCase();
+    const out = [];
+    for (const tx of this.index.values()) {
+      if (tx.issuerDid === issuerDid) {
+        const copy = { ...tx };
+        if (this.revokedIndex.has(tx.vcId)) {
+          copy.revoked = true;
         }
+        copy.id = tx.vcId;
+        copy.recipientDID = tx.subjectDid;
+        copy.issuanceDate = tx.timestamp;
+        if (tx.expirationDate) copy.expirationDate = tx.expirationDate;
+        out.push(copy);
       }
     }
-
-    return results;
+    return out;
   }
 
   /* =====================================================
@@ -176,6 +202,19 @@ class CredentialRegistry {
       throw new Error('credentialId and vc are required');
     }
 
+    // expiry check (only mark expired when a valid past date is provided)
+    if (vc.expirationDate) {
+      const exp = new Date(vc.expirationDate);
+      if (!isNaN(exp.getTime()) && exp < new Date()) {
+        return {
+          credentialId,
+          computedHash: null,
+          exists: false,
+          reason: 'Credential expired'
+        };
+      }
+    }
+
     const canonical = canonicalize(vc);
     const computedHash = crypto
       .createHash('sha256')
@@ -204,13 +243,47 @@ class CredentialRegistry {
 
         if (tx.type === 'CREDENTIAL_ISSUED') {
           this.index.set(tx.vcId, tx);
+          if (tx.subjectDid) {
+            const arr = this.subjectIndex.get(tx.subjectDid) || [];
+            arr.push(tx);
+            this.subjectIndex.set(tx.subjectDid, arr);
+          }
         }
 
         if (tx.type === 'CREDENTIAL_REVOKED') {
           this.revokedIndex.add(tx.vcId);
         }
+
+        // rebuild approval indexes
+        if (tx.type === 'ISSUER_APPROVED' && tx.did) {
+          this.approvedIssuers.add(tx.did);
+        }
+
+        if (tx.type === 'VERIFIER_APPROVED' && tx.did) {
+          this.approvedVerifiers.add(tx.did);
+        }
       }
     }
+  }
+
+  approveIssuer(did) {
+    if (typeof did === 'string') did = did.toLowerCase();
+    this.approvedIssuers.add(did);
+  }
+
+  isIssuerApproved(did) {
+    if (typeof did === 'string') did = did.toLowerCase();
+    return this.approvedIssuers.has(did);
+  }
+
+  approveVerifier(did) {
+    if (typeof did === 'string') did = did.toLowerCase();
+    this.approvedVerifiers.add(did);
+  }
+
+  isVerifierApproved(did) {
+    if (typeof did === 'string') did = did.toLowerCase();
+    return this.approvedVerifiers.has(did);
   }
 
 }

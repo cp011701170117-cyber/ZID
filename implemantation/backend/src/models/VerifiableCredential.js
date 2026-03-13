@@ -1,6 +1,6 @@
-import crypto from 'crypto';
+const crypto = require('crypto');
 
-export function createVerifiableCredential({
+function createVerifiableCredential({
   issuerDid,
   subjectDid,
   credentialType,
@@ -26,9 +26,14 @@ export function createVerifiableCredential({
   return vc;
 }
 
-export function hashCredential(vc) {
+function hashCredential(vc) {
   return crypto
     .createHash('sha256')
     .update(JSON.stringify(vc))
     .digest('hex');
 }
+
+module.exports = {
+  createVerifiableCredential,
+  hashCredential
+};

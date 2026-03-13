@@ -22,12 +22,9 @@ class Block {
   }
 
   calculateHash() {
-    const blockString = `${this.index}${this.previousHash}${this.timestamp}${JSON.stringify(
-      this.data
-    )}${this.validator}`;
+    const blockString = `${this.index}${this.previousHash}${this.timestamp}${JSON.stringify(this.data)}`;
     return crypto.createHash('sha256').update(blockString).digest('hex');
   }
-
   static genesis() {
     return new Block(
       0,

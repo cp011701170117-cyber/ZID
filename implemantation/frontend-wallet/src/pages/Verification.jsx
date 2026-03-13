@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
-import axios from 'axios'
+import { apiRequest } from '../utils/api'
 
 export default function Verification() {
-  const { wallet, isAuthenticated } = useWallet()
+  const { session, isAuthenticated } = useWallet()
   const navigate = useNavigate()
   const [verificationRequests, setVerificationRequests] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,52 +36,75 @@ export default function Verification() {
     }
   }
 
-  if (!wallet) return null
+  if (!session) return null
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-3xl font-bold text-gray-800 mb-6">Verification Requests</h1>
-
+    <div style={{ minHeight: '100vh' }}>
+      <div className="ambient-blob ambient-blob-1" />
+      <div className="ambient-blob ambient-blob-2" />
+      <nav className="zid-navbar">
+        <div className="zid-navbar-inner">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div className="zid-logo">
+              <div className="zid-logo-mark">ZID</div>
+              <span className="zid-logo-text">ZID</span>
+            </div>
+            <span className="zid-portal-badge">Wallet Portal</span>
+          </div>
+          <div className="zid-nav-links">
+            <button onClick={() => navigate('/dashboard')} className="zid-nav-link">Dashboard</button>
+            <button onClick={() => navigate('/credentials')} className="zid-nav-link">Credentials</button>
+            <button onClick={() => navigate('/verification')} className="zid-nav-link active">Verification</button>
+          </div>
+        </div>
+      </nav>
+      <div className="page-container verification-container">
+        <header className="verification-header">
+          <h1 className="page-title">Verification Requests</h1>
+          <p className="page-description">Pending requests from verifiers to access your credentials</p>
+        </header>
         {loading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <div style={{ textAlign: 'center', padding: '80px 0' }}>
+            <div className="loading-spinner" />
+          </div>
         ) : verificationRequests.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600">No pending verification requests.</p>
+          <div className="section-card">
+            <div className="empty-state">
+              <div className="empty-state-icon">🔍</div>
+              <div className="empty-state-text">No pending verification requests</div>
+              <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '8px' }}>When verifiers request access to your credentials, they will appear here</p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <section className="verify-list">
             {verificationRequests.map((request) => (
-              <div key={request.id} className="bg-white rounded-lg shadow p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="font-semibold text-lg text-gray-800">
-                      {request.verifier}
-                    </h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Requested: {new Date(request.requestedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => handleApprove(request.id)}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleReject(request.id)}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
-                    >
-                      Reject
-                    </button>
-                  </div>
+              <article key={request.id} className="section-card verify-card">
+                <div className="verify-card-header">
+                  <div className="verify-card-title">{request.verifier}</div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                    Requested: {new Date(request.requestedAt).toLocaleString()}
+                  </p>
                 </div>
-              </div>
+                <div className="verify-card-actions">
+                  <button
+                    onClick={() => handleApprove(request.id)}
+                    className="gradient-button"
+                    style={{ padding: '10px 20px', fontSize: '13px' }}
+                  >
+                    <span>Approve</span>
+                  </button>
+                  <button
+                    onClick={() => handleReject(request.id)}
+                    className="danger-button"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </article>
             ))}
-          </div>
+          </section>
         )}
-      </main>
+      </div>
     </div>
   )
 }

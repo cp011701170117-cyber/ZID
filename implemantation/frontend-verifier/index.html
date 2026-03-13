@@ -1,22 +1,173 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Verifier Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZID — Verifier Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./src/styles.css">
 </head>
 <body>
 
-  <div class="container">
-    <h1>Verifier Portal</h1>
+  <!-- Ambient blobs -->
+  <div class="ambient-blob ambient-blob-1"></div>
+  <div class="ambient-blob ambient-blob-2"></div>
+  <div class="ambient-blob ambient-blob-3"></div>
 
-    <div class="card">
-      <label for="vcId">Credential ID</label>
-      <input type="text" id="vcId" placeholder="Enter VC ID">
-      <button id="verifyBtn">Verify Credential</button>
+  <!-- Navbar -->
+  <nav class="zid-navbar">
+    <div class="zid-navbar-inner">
+      <div class="zid-logo-group">
+        <div class="zid-logo-mark">ZID</div>
+        <span class="zid-logo-text">ZID</span>
+        <span class="zid-portal-badge">Verifier Portal</span>
+      </div>
+      <div id="walletDid" class="zid-wallet-did"></div>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <div class="page-container">
+    <div class="page-header">
+      <h1 class="page-title glitch-title" data-text="Identity Verifier">Identity Verifier</h1>
+      <p class="page-description">Verify decentralized identity credentials on-chain in real-time</p>
     </div>
 
-    <div id="resultContainer"></div>
+    <!-- Connect wallet card -->
+    <div class="glass-card connect-card" id="walletCard">
+      <div class="connect-icon">
+        <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <h2 class="connect-title">Connect Your Wallet</h2>
+      <p class="connect-subtitle">Authenticate as a verified identity verifier to access the credential verification portal.</p>
+      <button id="connectWalletBtn" class="gradient-button">Connect Wallet</button>
+      <p id="approvalStatus" class="approval-status"></p>
+    </div>
+
+    <!-- Verify layout (shown when authenticated) -->
+    <div class="verify-layout" id="verifyCard" style="display:none">
+
+      <!-- LEFT: Input panel -->
+      <div class="glass-card verify-panel">
+        <div class="panel-header">
+          <div class="panel-icon panel-icon-purple">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 class="panel-title">Verify Credential</h2>
+        </div>
+
+        <div class="input-group">
+          <label class="tech-label" for="credentialIdInput">Credential ID</label>
+          <input type="text" id="credentialIdInput" class="tech-input" placeholder="vc:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+          <button id="verifyByIdBtn" class="gradient-button" style="width:100%;margin-top:12px">Verify by ID</button>
+        </div>
+
+        <div class="or-divider"><span>OR</span></div>
+
+        <div class="input-group">
+          <label class="tech-label" for="vcJson">Paste Full Credential JSON</label>
+          <textarea id="vcJson" rows="7" class="tech-input tech-textarea" placeholder='{ "id": "vc:...", "issuer": "did:...", ... }'></textarea>
+          <button id="verifyBtn" class="gradient-button" style="width:100%;margin-top:12px">Verify JSON</button>
+        </div>
+      </div>
+
+      <!-- RIGHT: Result + Blockchain -->
+      <div class="right-panels">
+        <div id="resultContainer" class="result-container"></div>
+
+        <div class="glass-card blockchain-panel" id="blockchainInfo" style="display:none">
+          <div class="panel-header">
+            <div class="panel-icon panel-icon-cyan">
+              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            </div>
+            <h2 class="panel-title">Blockchain Activity</h2>
+          </div>
+          <div class="blockchain-visualizer">
+            <div class="chain-track" aria-live="polite"></div>
+          </div>
+          <div id="chainStats" class="chain-stats">Loading blockchain data...</div>
+          <button id="resetChainBtn" class="danger-btn-sm">Reset blockchain (authority)</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Blockchain Confirmation Animation Modal -->
+  <div id="confirmationModal" class="zid-modal hidden">
+    <div class="zid-modal-content confirmation-modal-content">
+      <div id="confirmationAnimationContainer" class="confirmation-animation-container">
+        
+        <!-- Step 1: Scanning -->
+        <div id="step1Container" class="confirmation-step confirmation-step-1 active">
+          <div class="step-title">Scanning Credential...</div>
+          <div class="credential-card scan-card">
+            <div class="scan-line"></div>
+            <div class="scan-glow"></div>
+          </div>
+          <div class="step-subtitle">Analyzing blockchain record</div>
+        </div>
+
+        <!-- Step 2: Validating -->
+        <div id="step2Container" class="confirmation-step confirmation-step-2">
+          <div class="step-title">Validating Signature...</div>
+          <div class="pulsing-circle-container">
+            <div class="signature-ring"></div>
+            <div class="pulsing-circle pulse-1"></div>
+            <div class="pulsing-circle pulse-2"></div>
+            <div class="pulsing-circle pulse-3"></div>
+            <div class="pulsing-circle-center">
+              <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m7 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <div class="step-subtitle">Verifying cryptographic proof</div>
+        </div>
+
+        <!-- Step 3: Blockchain Check -->
+        <div id="step3Container" class="confirmation-step confirmation-step-3">
+          <div class="step-title">Checking Blockchain...</div>
+          <div class="blockchain-blocks-container">
+            <div class="moving-block moving-block-1"></div>
+            <div class="moving-block moving-block-2"></div>
+            <div class="moving-block moving-block-3"></div>
+            <div class="moving-block moving-block-4"></div>
+          </div>
+          <div class="step-subtitle">Validating immutable ledger</div>
+        </div>
+
+        <!-- Step 4: Success -->
+        <div id="step4Container" class="confirmation-step confirmation-step-4">
+          <div class="success-badge-container">
+            <div class="success-badge-circle">
+              <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <div class="success-title reveal-text">Credential Verified on Blockchain</div>
+          <div class="success-badge reveal-text">✔ Verified</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="zid-modal hidden">
+    <div class="zid-modal-content">
+      <button id="modalClose" class="zid-modal-close" aria-label="Close">&times;</button>
+      <div id="modalBody" class="zid-modal-body"></div>
+    </div>
   </div>
 
   <script type="module" src="./src/verify.js"></script>

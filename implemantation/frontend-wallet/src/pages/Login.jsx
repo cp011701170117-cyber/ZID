@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
+import { resetAuthState } from '../utils/authReset.js'
 
 export default function Login() {
   const { loginWithWallet, registerDID } = useWallet()
@@ -9,8 +10,13 @@ export default function Login() {
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
+  useEffect(() => {
+    resetAuthState()
+  }, [])
+
   const handleWalletLogin = async () => {
     try {
+      sessionStorage.clear()
       const session = await loginWithWallet()
 
       if (!session.did) {
@@ -32,43 +38,51 @@ export default function Login() {
     }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 to-blue-50">
-      <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md">
-
-        <h1 className="text-2xl font-bold text-center mb-6">
-          Decentralized Identity Wallet
-        </h1>
-
-        {!needsUsername ? (
-          <button
-            onClick={handleWalletLogin}
-            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold"
-          >
-            🔐 Connect Wallet
-          </button>
-        ) : (
-          <>
-            <input
-              type="text"
-              placeholder="Choose a username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full border px-4 py-2 rounded mb-4"
-            />
-            <button
-              onClick={handleRegister}
-              className="w-full bg-green-600 text-white py-3 rounded-lg"
-            >
-              Create DID
-            </button>
-          </>
-        )}
-
-        {error && (
-          <p className="mt-4 text-red-600 text-sm">{error}</p>
-        )}
+return (
+  <div className="login-page">
+    <div className="ambient-blob ambient-blob-1" />
+    <div className="ambient-blob ambient-blob-2" />
+    <div className="login-card">
+      <div className="login-icon">
+        <svg width="30" height="30" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth="1.8">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+        </svg>
       </div>
+      <h1 className="login-title">Identity Wallet</h1>
+      <p className="login-subtitle">
+        Self-Sovereign · Cryptographically Secured · On-Chain Identity
+      </p>
+
+      {!needsUsername ? (
+        <button onClick={handleWalletLogin} className="neon-button full-width">
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Connect Wallet
+          </span>
+        </button>
+      ) : (
+        <div className="register-section">
+          <input
+            type="text"
+            placeholder="Choose a username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="cyber-input"
+          />
+          <button onClick={handleRegister} className="neon-button full-width">
+            Create DID
+          </button>
+        </div>
+      )}
+
+      {error && <div className="error-box">{error}</div>}
+
+      <p style={{ textAlign: 'center', marginTop: '24px', fontSize: '12px', color: 'var(--text-muted)' }}>
+        Decentralized Identity Verification System
+      </p>
     </div>
-  )
+  </div>
+)
 }
