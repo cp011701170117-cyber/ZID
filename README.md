@@ -158,7 +158,7 @@ J[Credential Verification Service]
 end
 
 subgraph TrustLayer[Trust Layer]
-K[IPFS Storage (Pinata)]
+K["IPFS Storage (Pinata)"]
 L[Blockchain Anchor Ledger]
 end
 
