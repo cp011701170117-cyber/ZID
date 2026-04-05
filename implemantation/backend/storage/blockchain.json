@@ -1,0 +1,16 @@
+[
+  {
+    "index": 0,
+    "previousHash": "0",
+    "timestamp": 1775316879492,
+    "data": {
+      "type": "GENESIS",
+      "payload": {
+        "message": "DID VC Chain Genesis Block"
+      }
+    },
+    "validator": "GENESIS_VALIDATOR",
+    "signature": null,
+    "hash": "de48c0b1dd3d5f342f8a1db3685930294738016ceb6111bbd232c7caada30f41"
+  }
+]\n

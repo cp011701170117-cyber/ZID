@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Dashboard from './pages/Dashboard'
 import IssueCredential from './pages/IssueCredential'
 import CredentialHistory from './pages/CredentialHistory'
+import PipelineStatus from './pages/PipelineStatus'
 import Login from './pages/Login'
 import { IssuerProvider, useIssuer } from './context/IssuerContext'
 
@@ -49,6 +50,12 @@ function InnerApp() {
             >
               History
             </button>
+            <button
+              onClick={() => setCurrentView('pipeline')}
+              className={`zid-nav-link${currentView === 'pipeline' ? ' active' : ''}`}
+            >
+              Pipeline
+            </button>
           </div>
         </div>
       </nav>
@@ -57,6 +64,7 @@ function InnerApp() {
         {currentView === 'dashboard' && <Dashboard />}
         {currentView === 'issue' && <IssueCredential />}
         {currentView === 'history' && <CredentialHistory />}
+        {currentView === 'pipeline' && <PipelineStatus />}
       </main>
     </div>
   )

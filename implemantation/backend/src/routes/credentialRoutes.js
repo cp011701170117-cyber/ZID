@@ -2,10 +2,10 @@
 const express = require('express');
 const crypto = require('crypto');
 const { issueCredentialSchema } = require('../validators/credentialValidator');
-const { createVerifiableCredential } = require('../models/VerifiableCredential');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware')
 const validate = require('../middleware/validate');
+const { createCredentialRequestAndRun } = require('../services/approvalPipelineService');
 
 // registry instances are maintained centrally; obtain on demand
 const { getRegistryInstance } = require('../blockchain/registryInstance');
@@ -24,117 +24,41 @@ function createCredentialRouter(credentialRegistry) {
     validate(issueCredentialSchema),
     async (req, res, next) => {
       try {
-        // normalized by authMiddleware already but defend again
-        let issuerDid = req.user.did;
-        if (typeof issuerDid === 'string') issuerDid = issuerDid.toLowerCase();
-
-        // extract raw wallet address from DID for environment whitelist comparison
-        let issuerAddress = issuerDid;
-        if (issuerAddress.startsWith('did:ethr:') || issuerAddress.startsWith('did:ether:')) {
-          issuerAddress = issuerAddress.split(':').pop();
-        }
-
-        // environment-based whitelist may include one or more entries
-        // (plain wallet addresses or full DIDs); support either variable name
-        // for backwards compatibility.  comparisons are always done in
-        // lowercase.
-        const rawAllowed = process.env.ALLOWED_ISSUERS || process.env.ALLOWED_ISSUER;
-        if (rawAllowed) {
-          const allowedAddrs = rawAllowed
-            .split(',')
-            .map(a => a.trim().toLowerCase())
-            .filter(a => a.length > 0);
-
-          // normalize extracted issuer address as well
-          const normalizedIssuer = issuerAddress.toString().toLowerCase();
-          if (!allowedAddrs.includes(normalizedIssuer)) {
-            return res.status(403).json({ error: 'Issuer not approved' });
-          }
-
-          // ensure registry state exists for whitelisted address; this is
-          // important for tests that wipe storage earlier; the whitelist
-          // alone shouldn't be enough to grant issuance but we need a
-          // record for later checks (revoke etc.)
-          const { didRegistry, credentialRegistry } = getRegistryInstance();
-          if (!didRegistry.resolveDID(issuerDid)) {
-            didRegistry.registerDID({ did: issuerDid, publicKeyPem: null, address: issuerAddress });
-          }
-          if (!didRegistry.isApprovedIssuer(issuerDid)) {
-            const authorityAddress = process.env.VALIDATOR_ID || 'AUTHORITY_NODE';
-            const authorityDid = didRegistry.generateDIDFromAddress(authorityAddress);
-            didRegistry.approveIssuer(issuerDid, authorityDid);
-          }
-          if (!credentialRegistry.isIssuerApproved(issuerDid)) {
-            credentialRegistry.approveIssuer(issuerDid);
-          }
-        }
-
-        if (!didRegistry.isApprovedIssuer(issuerDid)) {
-          return res.status(403).json({ error: 'DID not approved as issuer' });
-        }
-
-        if (!credentialRegistry.isIssuerApproved(issuerDid)) {
-          return res.status(403).json({ error: "Issuer not approved by authority" });
-        }
-
-        const { subjectDid, credentialType = "CustomCredential", claims, expirationDate } = req.body;
-
-        const vc = createVerifiableCredential({
-          issuerDid,
-          subjectDid,
-          credentialType,
-          claims
+        const workflow = await createCredentialRequestAndRun({
+          reqUser: req.user,
+          payload: req.body
         });
 
-        if (expirationDate) {
-          vc.expirationDate = expirationDate;
+        if (workflow.issuanceStatus !== 'ISSUED') {
+          return res.status(202).json({
+            message: 'Credential request submitted for automated multi-authority approval',
+            requestId: workflow.id,
+            issuanceStatus: workflow.issuanceStatus,
+            approvalCount: workflow.approvalCount,
+            requiredApprovals: workflow.requiredApprovals,
+            vcId: workflow.vc.id,
+            vc: workflow.vc,
+            authorityDecisions: workflow.authorityDecisions || []
+          });
         }
-
-        const unsignedVc = { ...vc };
-        delete unsignedVc.proof;
-
-        const { signData } = require("../services/cryptoService");
-
-        const proof = {
-          type: "RsaSignature2018",
-          created: new Date().toISOString(),
-          proofPurpose: "assertionMethod",
-          verificationMethod: `${issuerDid}#key-1`,
-          algorithm: "RSA-SHA256",
-          jws: signData(unsignedVc)
-        };
-
-        vc.proof = proof;
-
-        const canonicalize = require('canonicalize');
-        const canonical = canonicalize(vc);
-
-        const vcHash = crypto
-          .createHash('sha256')
-          .update(canonical)
-          .digest('hex');
-
-        const { uploadJSONToIPFS } = require('../services/ipfsService');
-        const ipfsResult = await uploadJSONToIPFS(vc);
-
-        const anchor = credentialRegistry.addCredentialHash({
-          credentialId: vc.id,
-          hash: vcHash,
-          cid: ipfsResult.cid,
-          issuerDid,
-          subjectDid,
-          expirationDate: vc.expirationDate
-        });
 
         return res.status(201).json({
           message: 'Credential issued successfully',
-          vcId: vc.id,
-          vcHash,
-          ipfsCid: ipfsResult.cid,
-          anchor,
-          vc
+          requestId: workflow.id,
+          issuanceStatus: workflow.issuanceStatus,
+          approvalCount: workflow.approvalCount,
+          requiredApprovals: workflow.requiredApprovals,
+          vcId: workflow.vc.id,
+          vcHash: workflow.issuanceResult?.vcHash,
+          ipfsCid: workflow.issuanceResult?.ipfsCid,
+          anchor: workflow.issuanceResult?.anchor,
+          vc: workflow.vc,
+          authorityDecisions: workflow.authorityDecisions || []
         });
       } catch (err) {
+        if (err.statusCode) {
+          return res.status(err.statusCode).json({ error: err.message });
+        }
         next(err);
       }
     }

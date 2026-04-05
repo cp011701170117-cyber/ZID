@@ -26,7 +26,8 @@ class CredentialRegistry {
     cid,
     issuerDid,
     subjectDid,
-    expirationDate
+    expirationDate,
+    vc
   }) {
     // normalize stored identifiers
     if (typeof issuerDid === 'string') issuerDid = issuerDid.toLowerCase();
@@ -40,6 +41,7 @@ class CredentialRegistry {
       issuerDid,
       subjectDid,
       expirationDate: expirationDate || null,
+      vc: vc || null,
       timestamp: Date.now(),
       revoked: false
     };

@@ -1,299 +1,209 @@
-# Decentralized Identity & Verifiable Credential Platform
+# ZID: Decentralized Identity and Verifiable Credential Platform
 
-A decentralized identity management platform where trusted institutions issue digitally signed credentials, holders manage those credentials in a wallet, and verifiers validate authenticity without relying on a single centralized authority.
+ZID is a multi-portal decentralized identity prototype where:
+- issuers authenticate with wallet signatures and issue verifiable credentials,
+- holders keep credentials linked to their DID,
+- verifiers validate credentials against cryptographic proof, blockchain anchor data, revocation state, expiration, and approval rules.
 
-The system combines wallet signatures, DID-based identity, IPFS storage, and a custom blockchain anchor layer to provide credential integrity, tamper detection, and user-controlled data sharing.
+The repository includes one backend service and three separate frontend clients (wallet, issuer, verifier).
 
----
+## What This Project Implements
 
-## Project Overview
+- Wallet-signature authentication using nonce + MetaMask flow
+- DID registration and DID resolution
+- Role-aware JWT sessions (`holder`, `issuer`, `verifier`, `authority`)
+- Verifiable Credential issuance with RSA proof (`RsaSignature2018`-style payload)
+- Canonical JSON hashing + blockchain anchoring
+- IPFS pinning and fetch through Pinata
+- Credential revocation and expiration checks
+- Automated multi-authority approval pipeline before issuance finalization
+- Verifier approval checks
+- Admin endpoints to reset storage and/or blockchain for testing
+- Verifier-side blockchain visualizer UI
 
-Traditional identity systems store records in centralized databases, which often introduces:
+## Repository Layout
 
-- Data breaches and single points of failure
-- Identity misuse and unauthorized edits
-- Limited user control over personal records
-- Slow, costly cross-organization verification
-
-This project demonstrates a decentralized credential model in which:
-
-- Issuers sign and issue Verifiable Credentials (VCs)
-- Holders manage credentials through wallet-based identity
-- Verifiers validate credentials by signature, hash consistency, approval status, and revocation state
-
-The result is practical trust: fast verification with cryptographic proof and transparent auditability.
-
-This repository demonstrates a strong prototype for decentralized identity and verifiable credential workflows.
-
----
-
-## System Roles
-
-The platform is built around three primary actors.
-
-### Issuer
-
-Trusted institutions such as universities, training providers, or company authorities.
-
-**Responsibilities:**
-
-- Authenticate with wallet signature
-- Issue signed credentials to subject DIDs
-- Revoke credentials when required
-
-**Example:**
-A university issues a digital degree credential.
-
----
-
-### Wallet Holder (User)
-
-The individual who owns a DID and receives credentials.
-
-**Responsibilities:**
-
-- Connect wallet and register DID
-- Hold credentials linked to that DID
-- Present credentials to verifiers when required
-
-**Example:**
-A graduate stores a degree VC in an identity wallet.
-
----
-
-### Verifier
-
-An organization that needs to validate a credential.
-
-**Responsibilities:**
-
-- Authenticate as verifier
-- Submit VC JSON, VC ID, or CID for validation
-- Interpret validity, revocation, and expiry results
-
-**Example:**
-An employer verifies a candidate's degree claim.
-
-With roles established, the next section summarizes core capabilities delivered by the platform.
-
----
-
-## Key Features
-
-- **DID-based identity lifecycle**
-- **Nonce + wallet-signature authentication flow**
-- **Role-aware JWT authorization** (issuer, holder, verifier, authority)
-- **Verifiable Credential issuance with RSA proof**
-- **Canonical JSON hashing and blockchain anchoring**
-- **IPFS storage integration (Pinata)**
-- **Revocation and expiration handling**
-- **Verifier and issuer approval controls**
-- **Admin reset endpoints for test/dev operations**
-- **Three dedicated UIs:** issuer, wallet holder, verifier
-
-These features are implemented through a layered architecture described below.
-
----
-
-## Architecture
-
-The project is organized into frontend clients, backend API/services, and blockchain-backed registries.
-
-### Frontend
-
-- `implemantation/frontend-wallet`: React + Vite holder portal
-- `implemantation/frontend-issuer`: React + Vite issuer portal
-- `implemantation/frontend-verifier`: Vite + JavaScript verifier portal
-- Each frontend proxies `/api` requests to backend (`http://localhost:5000`)
-
-### Backend
-
-- `implemantation/backend/src/server.js`: app bootstrap, security middleware, and route registration
-- Auth controllers: nonce generation + wallet signature verification
-- DID routes: register and resolve DID
-- Credential routes: issue, revoke, verify, list, verify-by-cid
-- Governance routes: authority approval for issuer/verifier
-- Admin routes: reset storage and reset chain
-
-### Blockchain Layer
-
-- Custom Proof-of-Authority style chain in `src/blockchain`
-- Credential hash anchors and DID/governance events become blocks
-- Chain and DID state persist in local JSON files under `backend/storage`
-
-### Data and Storage
-
-- VC payload JSON is uploaded to IPFS via Pinata
-- Anchor metadata (`hash`, `cid`, `issuer`, `subject`) is stored in the credential registry
-- Persistent files:
-  - `backend/storage/blockchain.json` or `blockchain.test.json`
-  - `backend/storage/dids.json`
-
-The following diagram presents this architecture in a single layered view.
-
----
-
-## System Architecture Diagram
-
-```mermaid
-flowchart LR
-
-subgraph Users
-A[Issuer Portal]
-B[Holder Wallet]
-C[Verifier Portal]
-end
-
-subgraph Frontend
-D[React + Vite Applications]
-E[Wallet Interaction Layer]
-end
-
-subgraph Backend
-F[Node.js Express API]
-G[Authentication Service]
-H[DID Registry]
-I[Credential Issuance Service]
-J[Credential Verification Service]
-end
-
-subgraph TrustLayer[Trust Layer]
-K["IPFS Storage (Pinata)"]
-L[Blockchain Anchor Ledger]
-end
-
-A --> D
-B --> D
-C --> D
-
-D --> E
-E --> F
-
-F --> G
-F --> H
-F --> I
-F --> J
-
-I --> K
-I --> L
-
-J --> K
-J --> L
+```text
+ZID/
+├── README.md
+├── LICENSE
+├── implemantation/
+│   ├── backend/
+│   │   ├── package.json
+│   │   ├── jest.config.js
+│   │   ├── src/
+│   │   │   ├── server.js
+│   │   │   ├── config.js
+│   │   │   ├── blockchain/
+│   │   │   ├── controllers/
+│   │   │   ├── middleware/
+│   │   │   ├── models/
+│   │   │   ├── routes/
+│   │   │   ├── services/
+│   │   │   ├── storage/
+│   │   │   └── validators/
+│   │   ├── storage/
+│   │   └── tests/
+│   ├── frontend-wallet/
+│   ├── frontend-issuer/
+│   └── frontend-verifier/
+└── ...
 ```
 
-The architecture is organized into four layers:
+Note: the top-level folder is intentionally named `implemantation` in this repository, and all commands below use that exact path.
 
-- **User interaction layer:** issuer, holder, and verifier portals provide role-specific entry points.
-- **Frontend client layer:** React + Vite apps drive UI and route wallet interactions through Ethers.js/MetaMask.
-- **Backend services layer:** Node.js/Express handles authentication, DID operations, issuance, and verification.
-- **Decentralized trust layer:** IPFS (Pinata) stores credential payloads, while the blockchain ledger stores tamper-evident anchors.
+## Architecture Summary
 
-From architecture, we can now walk through the end-to-end operational flow.
+### Frontends
 
----
-
-## Workflow
-
-### 1. Identity Creation
-
-Holder connects a wallet and registers a DID through `/api/did/register`.
-
-### 2. Authentication
-
-Client requests a nonce (`/api/auth/*/nonce`), signs it using the wallet, and sends the signature to a verify endpoint (`/api/auth/*/verify`) to receive a JWT.
-
-### 3. Credential Issuance
-
-Issuer sends subject DID + claims to `/api/credentials/issue`.
-Backend creates the VC, signs it, canonicalizes and hashes it, uploads VC JSON to IPFS, then anchors metadata on blockchain.
-
-### 4. Credential Sharing
-
-Holder shares credential data (VC JSON, VC ID, or CID) with a verifier.
-
-### 5. Verification
-
-Verifier submits the credential for validation. Backend checks:
-
-- Verifier approval
-- Signature validity
-- Canonical hash equality with anchored hash
-- Revocation status
-- Expiration status
-- Issuer approval state
-
-If all checks pass, the credential is valid.
-
-The stack below maps these capabilities to concrete technologies.
-
----
-
-## Technology Stack
-
-### Frontend
-
-- React 18 + Vite (issuer and wallet)
-- Vite + JavaScript (verifier)
-- Tailwind CSS, PostCSS, Autoprefixer
-- Ethers.js integration for wallet interactions
+- `implemantation/frontend-wallet` (React + Vite, port `3000`)
+  - Holder login and DID registration flow
+  - Holder credential views/verification pages
+- `implemantation/frontend-issuer` (React + Vite, port `3001`)
+  - Issuer wallet login
+  - Issue credential, view history, track pipeline status
+- `implemantation/frontend-verifier` (Vite + vanilla JS, port `5173`)
+  - Verifier wallet login
+  - Verify by VC JSON or VC ID
+  - Blockchain visualization and chain validation display
 
 ### Backend
 
-- Node.js, Express.js
-- Joi validation
-- JSON Web Token (`jsonwebtoken`)
-- Helmet, `express-rate-limit`, CORS, Morgan
+`implemantation/backend/src/server.js` provides an Express API with:
+- Helmet security headers
+- CORS whitelist logic
+- Rate limiting (`100` requests per `15` min window)
+- Centralized error handling
+- Route groups for auth, DID, credential lifecycle, governance, and admin actions
 
-### Blockchain / Cryptography
+### Trust/Data Layer
 
-- Custom PoA-style blockchain implementation
-- SHA-256 hashing (`crypto`)
-- Canonical JSON (`canonicalize`)
-- RSA proof signing/verification for VC payloads
-- Ethers address recovery for wallet-signature login
+- Local custom blockchain for immutable event anchoring
+- DID registry and credential registry indexes in backend memory, persisted to JSON
+- IPFS storage integration through Pinata for credential content retrieval/anchoring metadata
 
-### Storage and Integration
+## Authentication and Roles
 
-- Local JSON persistence for chain and DID state
-- Pinata IPFS APIs for VC content storage/retrieval
+All three roles authenticate by signing a nonce with a wallet.
 
-### Testing
+- Holder flow:
+  - `POST /api/auth/nonce`
+  - `POST /api/auth/verify`
+- Issuer flow:
+  - `POST /api/auth/issuer/nonce`
+  - `POST /api/auth/issuer/verify`
+- Verifier flow:
+  - `POST /api/auth/verifier/nonce`
+  - `POST /api/auth/verifier/verify`
+  - `GET /api/auth/verifier/status` (requires bearer token)
 
-- Jest + Supertest integration tests
+JWTs expire in 1 hour.
 
-Given this stack, security controls are essential and are summarized next.
+## Credential Issuance and Verification Flow
 
----
+### Issuance
 
-## Security Considerations
+1. Issuer authenticates via wallet signature.
+2. Issuer calls `POST /api/credentials/issue` with:
+   - `subjectDid`
+   - `claims` (object)
+   - optional `credentialType`
+   - optional `expirationDate` (ISO date)
+3. Backend creates VC payload, signs proof, runs authority pipeline, then finalizes issuance when approved.
+4. On issuance, VC is:
+   - canonicalized and hashed,
+   - uploaded to IPFS (Pinata),
+   - anchored into blockchain metadata.
 
-This project includes multiple security mechanisms:
+### Verification
 
-- Nonce-based wallet login to reduce replay risk
-- JWT token expiry (1 hour)
-- Role-based middleware for issuer/verifier/authority endpoints
-- Signature verification for credentials
-- Hash-based tamper detection against blockchain anchors
-- Approval checks for issuer and verifier roles
-- Helmet security headers and API rate limiting
+Verifier submits either:
+- full VC JSON to `POST /api/credentials/verify`, or
+- `vcId` to `POST /api/credentials/verify` (server resolves anchored VC), or
+- CID to `POST /api/credentials/verify-by-cid`.
 
-**Important note:**
-This is a prototype architecture and uses local file storage and local key-material patterns that are not production-grade key management.
+Validation includes:
+- verifier approval checks,
+- signature validation,
+- canonical hash match with anchor,
+- revocation status,
+- expiration status,
+- issuer approval status.
 
-The next section covers setup for local development and evaluation.
+## API Reference (Current)
 
----
+Base URL: `http://localhost:5000`
 
-## Installation & Setup
+### Health and Chain
 
-### 1. Clone the repository
+- `GET /health`
+- `GET /health/blockchain`
+- `GET /api/health`
+- `GET /api/blockchain/validate`
+- `GET /api/blockchain`
+- `GET /api/chain`
+- `GET /chain/verify`
+- `GET /block/:index/verify`
+
+### Auth
+
+- `POST /api/auth/nonce`
+- `POST /api/auth/verify`
+- `POST /api/auth/issuer/nonce`
+- `POST /api/auth/issuer/verify`
+- `POST /api/auth/verifier/nonce`
+- `POST /api/auth/verifier/verify`
+- `GET /api/auth/verifier/status` (auth required)
+
+### DID
+
+- `POST /api/did/register`
+- `GET /api/did/resolve/:did`
+
+### Credentials
+
+- `POST /api/credentials/issue` (issuer auth)
+- `POST /api/credentials/revoke` (issuer auth)
+- `POST /api/credentials/verify` (verifier auth)
+- `POST /api/credentials/verify-by-cid`
+- `GET /api/credentials`
+- `GET /api/credentials/wallet/:did`
+- `GET /api/credentials/session/:did`
+- `GET /api/credentials/issuer/:did`
+
+### Issuer Pipeline Endpoints
+
+- `POST /api/issuer/credentials/create-request`
+- `GET /api/issuer/credentials/:id/pipeline-status`
+- `GET /api/issuer/credentials/pending-approvals`
+- `POST /api/issuer/credentials/:id/retry-automation`
+- `POST /api/issuer/credentials/:id/finalize-issuance`
+
+### Governance
+
+- `POST /api/governance/approve` (authority auth)
+- `POST /api/governance/approve-verifier` (authority auth)
+
+### Protected Utility
+
+- `GET /api/protected/me`
+
+### Admin
+
+- `POST /api/admin/reset-storage` (authority auth)
+- `POST /api/admin/reset` (authority auth)
+- `POST /api/admin/reset-chain` (authority auth)
+
+## Local Setup
+
+### 1) Clone
 
 ```bash
 git clone https://github.com/cp011701170117-cyber/ZID.git
 cd ZID
 ```
 
-### 2. Install dependencies for all modules
+### 2) Install Dependencies
 
 ```bash
 cd implemantation/backend
@@ -309,216 +219,77 @@ cd ../frontend-verifier
 npm install
 ```
 
-### 3. Configure backend environment
+### 3) Start Services
 
-Create `.env` in `implemantation/backend`:
-
-```env
-PORT=5000
-NODE_ENV=development
-
-JWT_SECRET=replace_with_a_long_random_secret
-
-# Comma-separated origins allowed by backend CORS
-CORS_ORIGIN=http://localhost:3000,http://localhost:3001,http://localhost:5173
-
-# Comma-separated wallet allowlists (lowercase recommended)
-ALLOWED_ISSUERS=0xissuer_wallet_1,0xissuer_wallet_2
-ALLOWED_VERIFIERS=0xverifier_wallet_1,0xverifier_wallet_2
-
-# Optional authority seed id for bootstrap
-VALIDATOR_ID=AUTHORITY_NODE
-
-# Pinata credentials for IPFS upload/fetch
-PINATA_API_KEY=your_pinata_api_key
-PINATA_API_SECRET=your_pinata_api_secret
-```
-
-### 4. Start backend
+Backend:
 
 ```bash
 cd implemantation/backend
 npm run dev
 ```
 
-Backend URL: `http://localhost:5000`
-
-### 5. Start frontend apps (separate terminals)
-
-Wallet app:
+Wallet frontend:
 
 ```bash
 cd implemantation/frontend-wallet
 npm run dev
 ```
 
-Issuer app:
+Issuer frontend:
 
 ```bash
 cd implemantation/frontend-issuer
 npm run dev
 ```
 
-Verifier app:
+Verifier frontend:
 
 ```bash
 cd implemantation/frontend-verifier
 npm run dev
 ```
 
-Default dev ports in current configs:
-
+Default dev URLs:
+- Backend: `http://localhost:5000`
 - Wallet: `http://localhost:3000`
 - Issuer: `http://localhost:3001`
 - Verifier: `http://localhost:5173`
 
-After setup, the API endpoints below support the core workflows.
-
----
-
-## API Summary
-
-Base URL: `http://localhost:5000`
-
-### Health and chain inspection
-
-- `GET /health`
-- `GET /health/blockchain`
-- `GET /api/health`
-- `GET /api/blockchain/validate`
-- `GET /api/blockchain`
-- `GET /api/chain`
-- `GET /chain/verify`
-- `GET /block/:index/verify`
-
-### Authentication
-
-- `POST /api/auth/nonce`
-- `POST /api/auth/verify`
-- `POST /api/auth/issuer/nonce`
-- `POST /api/auth/issuer/verify`
-- `POST /api/auth/verifier/nonce`
-- `POST /api/auth/verifier/verify`
-- `GET /api/auth/verifier/status`
-
-### DID operations
-
-- `POST /api/did/register`
-- `GET /api/did/resolve/:did`
-
-### Credential operations
-
-- `POST /api/credentials/issue`
-- `POST /api/credentials/revoke`
-- `POST /api/credentials/verify`
-- `POST /api/credentials/verify-by-cid`
-- `GET /api/credentials`
-- `GET /api/credentials/wallet/:did`
-- `GET /api/credentials/session/:did`
-- `GET /api/credentials/issuer/:did`
-
-### Governance and admin
-
-- `POST /api/governance/approve`
-- `POST /api/governance/approve-verifier`
-- `POST /api/admin/reset-storage`
-- `POST /api/admin/reset`
-- `POST /api/admin/reset-chain`
-
-For quick navigation, the repository layout is shown next.
-
----
-
-## Project Structure
-
-```text
-ZID/
-├── README.md
-├── implemantation/
-│   ├── backend/
-│   │   ├── src/
-│   │   │   ├── blockchain/
-│   │   │   ├── controllers/
-│   │   │   ├── middleware/
-│   │   │   ├── models/
-│   │   │   ├── routes/
-│   │   │   ├── services/
-│   │   │   ├── storage/
-│   │   │   └── validators/
-│   │   ├── storage/
-│   │   ├── tests/
-│   │   └── package.json
-│   ├── frontend-wallet/
-│   ├── frontend-issuer/
-│   └── frontend-verifier/
-└── sample/
-```
-
-You can validate backend behavior with the tests below.
-
----
-
 ## Running Tests
 
-From backend folder:
+Backend tests:
 
 ```bash
 cd implemantation/backend
 npm test
 ```
 
-Current tests cover key credential lifecycle scenarios, including issuance, tampering detection, revocation, expiration, verifier approval, and admin reset operations.
+The Jest suite covers credential issuance, tamper detection, revocation, expiration, verifier approval behavior, and admin reset flows.
 
-If issues arise during setup or test execution, use the troubleshooting guide below.
+## Implementation Notes and Caveats
 
----
+- This is a prototype and uses local JSON persistence in `implemantation/backend/storage`.
+- Some components use different DID prefixes (`did:ethr:` and `did:custom:`) depending on flow; keep values consistent per endpoint usage.
+- The verifier app includes a config file named `vita.config.js` (not `vite.config.js`) in this repository.
+- Production hardening still needed: managed key storage, stronger secret handling, database persistence, and deployment-grade observability.
 
 ## Troubleshooting
 
-### Backend exits on startup with missing environment variables
+- Backend exits at startup:
+  - Check `JWT_SECRET` and `CORS_ORIGIN` in backend `.env`.
+- Issuer login succeeds but issuance fails:
+  - Verify issuer wallet is in `ALLOWED_ISSUERS` and DID is approved.
+- Verifier receives "Verifier not approved":
+  - Ensure wallet is in `ALLOWED_VERIFIERS` and governance approval is completed if required.
+- IPFS upload/fetch errors:
+  - Validate Pinata keys and internet access.
+- Browser CORS errors:
+  - Add exact frontend origin to `CORS_ORIGIN` and restart backend.
 
-Set `JWT_SECRET` and `CORS_ORIGIN` in backend `.env`.
+## Team
 
-### Issuer login works but issuing fails
-
-Check wallet address in `ALLOWED_ISSUERS` and ensure address format/lowercase consistency.
-
-### Verifier gets "Verifier not approved"
-
-Ensure address is in `ALLOWED_VERIFIERS` and verifier DID is approved (if governance flow is used).
-
-### IPFS upload/fetch errors
-
-Verify `PINATA_API_KEY` and `PINATA_API_SECRET` values and internet connectivity.
-
-### CORS errors in browser
-
-Add the exact frontend origin and port to `CORS_ORIGIN`, then restart backend.
-
----
-
-## Current Status and Next Steps
-
-This repository is a strong prototype and learning platform for decentralized identity and VC verification flows.
-
-Recommended production-oriented upgrades:
-
-- Move from JSON files to a robust database
-- Introduce secure key management (HSM/KMS or vault)
-- Add structured logging/metrics/tracing
-- Add broader automated tests (especially frontend and error paths)
-- Add deployment profiles (staging/production) with hardened configuration
-
----
+This project was created and developed by Ghori Zeeshana Ahesanhusain, along with teammates Divyansh Chauhan, Shubham Pattani, and Maulin Gandhi, as a final-year degree project at GLS Faculty of Engineering and Technology.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for full terms.
-
----
-
-## About the Team
-
-This project was created and developed by **Ghori Zeeshana Ahesanhusain**, along with her teammates **Divyansh Chauhan**, **Shubham Pattani**, and **Maulin Gandhi**, as a final-year degree project at **GLS Faculty of Engineering and Technology**.
-
-More than just a project, it was a journey built together — and one worth remembering.
+MIT License. See `LICENSE`.

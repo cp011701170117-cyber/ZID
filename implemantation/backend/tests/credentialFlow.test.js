@@ -93,7 +93,7 @@ describe('Credential issuance & verification flow', () => {
         subjectDid: `did:ethr:${subjectWallet.address}`,
         credentialType: 'TestCredential',
         claims: { foo: 'bar' }
-      },15000);
+      });
     expect(resp.status).toBe(201);
     const vc2 = resp.body.vc;
 

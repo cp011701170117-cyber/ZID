@@ -41,7 +41,7 @@ const performReset = (req, res, next) => {
       }
 
       // wipe additional storage files if present
-      ['credentials.json', 'revocations.json', 'verifiers.json'].forEach((name) => {
+      ['credentials.json', 'revocations.json', 'verifiers.json', 'credentialApprovalWorkflows.json'].forEach((name) => {
         const p = path.join(storageDir, name);
         if (fs.existsSync(p)) {
           writeJsonAtomicSync(p, []);

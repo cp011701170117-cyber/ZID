@@ -1,0 +1,22 @@
+git token key.txt
+# Node
+node_modules/
+package-lock.json
+
+# Environment & secrets
+.env
+*.key
+*.pem
+pinata key.txt
+backend/keys/
+
+# Build & storage
+backend/storage/
+backend/src/storage/
+
+# Zip files
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db

@@ -18,6 +18,7 @@ const chain = blockchain;
 const authRoutes = require('./routes/authRoutes');
 const createDidRouter = require('./routes/didRoutes');
 const createCredentialRouter = require('./routes/credentialRoutes');
+const issuerCredentialRoutes = require('./routes/issuerCredentialRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const createIssuerGovernanceRouter = require('./routes/issuerGovernanceRoutes');
 const adminRoutes = require('./routes/adminRoutes');
@@ -67,6 +68,7 @@ if (process.env.NODE_ENV !== 'test') {
 app.use('/api/auth', authRoutes);
 app.use('/api/did', createDidRouter(didRegistry));
 app.use('/api/credentials', createCredentialRouter(credentialRegistry));
+app.use('/api/issuer/credentials', issuerCredentialRoutes);
 app.use('/api/protected', protectedRoutes);
 app.use('/api/governance', createIssuerGovernanceRouter(didRegistry));
 // administrative endpoints (storage reset, etc.)
